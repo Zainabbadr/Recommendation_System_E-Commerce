@@ -19,8 +19,7 @@ sys.path.append(str(Path(__file__).parent / "src"))
 from src.data.processor import DataProcessor
 from src.models.recommendations import (
     CollaborativeFiltering, 
-    ContentBasedFiltering, 
-    CategoryClustering
+    ContentBasedFiltering
 )
 # Try to import agents, with fallback for dependency issues
 try:
@@ -50,9 +49,6 @@ class ECommerceRecommendationSystem:
         self.data_processor = DataProcessor()
         self.cf_model = CollaborativeFiltering()
         self.cb_model = ContentBasedFiltering()
-        self.categorizer = CategoryClustering(
-            model_name=self.config.model.sentence_transformer_model
-        )
         
         # Only create agents if available
         if AGENTS_AVAILABLE and RecommendationAgents:
@@ -65,12 +61,8 @@ class ECommerceRecommendationSystem:
         
         self.df = None
     
-    def load_and_process_data(self, enable_categorization=False):
-        """Load and process the e-commerce dataset.
-        
-        Args:
-            enable_categorization (bool): Whether to run product categorization (slow)
-        """
+    def load_and_process_data(self):
+        """Load and process the e-commerce dataset."""
         print("Loading dataset...")
         raw_df = self.data_processor.load_dataset()
         
@@ -78,21 +70,7 @@ class ECommerceRecommendationSystem:
             print("Processing data...")
             self.df = self.data_processor.clean_data(raw_df)
             print(f"Processed data shape: {self.df.shape}")
-            
-            # Optionally add product categorization
-            if enable_categorization:
-                print("Categorizing products...")
-                descriptions = self.df['Description']
-                desc_to_group = self.categorizer.fit_transform(
-                    descriptions, 
-                    similarity_threshold=self.config.model.similarity_threshold
-                )
-                self.df['Description_Categorize'] = self.df['Description'].map(desc_to_group)
-                print("✅ Product categorization completed")
-            else:
-                print("⏩ Skipping product categorization (use enable_categorization=True to enable)")
-                # Add a simple category column as placeholder
-                self.df['Description_Categorize'] = 0
+            print("✅ Data processing completed")
             
             return self.df
         return None
@@ -157,8 +135,8 @@ def main():
     system = ECommerceRecommendationSystem()
     
     try:
-        # Load and process data (categorization disabled by default for speed)
-        df = system.load_and_process_data(enable_categorization=False)
+        # Load and process data (fast processing without categorization)
+        df = system.load_and_process_data()
         
         if df is not None:
             # Analyze data
