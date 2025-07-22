@@ -5,6 +5,7 @@ CrewAI agents for the recommendation system.
 import os
 import logging
 import time
+import pandas as pd
 from crewai import Agent, Task, Crew, LLM
 from src.data.processor import prepare_data
 from src.models.recommendations import collaborative_filtering_recommendations
@@ -17,149 +18,123 @@ logging.getLogger("opentelemetry").setLevel(logging.CRITICAL)
 class RecommendationAgents:
     """Class to manage recommendation system agents."""
     
-    def __init__(self, api_key="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"):
+    def __init__(self, api_key="AIzaSyCLYT2SLfK8VbHBjXMtr04PhTvN92lJXa8"):
+        # Try the format that worked in your tests
         self.llm = LLM(
-            model="groq/llama-3.1-8b-instant",  # Groq's fast Llama model
-            temperature=0.1,  # Very low temperature for minimal tokens
-            max_tokens=200,   # Drastically reduced token limit
+            model="gemini/gemini-1.5-flash",  # Format that worked
+            api_key=api_key.strip(),
+            temperature=0.7,
             verbose=False,
-            api_key=api_key,
-            timeout=20,       # Shorter timeout
-            max_retries=1,    # Only 1 retry to save quota
-            request_timeout=10
+            max_tokens=200,
         )
+        print("🤖 Using Gemini AI model (gemini/ format)")
+        self.llm_available = True
         
-        self.data_engineer = Agent(
-            role='Data Analyst',
-            goal='Analyze retail data patterns',
-            backstory="Expert in e-commerce analytics and customer segmentation",
-            verbose=False,
-            llm=self.llm,
-            allow_delegation=False,
-            max_iterations=1,  # Only 1 iteration to save quota
-            tools=[prepare_data]
-        )
-        
-        self.cf_specialist = Agent(
-            role='Recommender',
-            goal='Make recommendations',
-            backstory='Recommendation expert',
-            verbose=False,
-            llm=self.llm,
-            allow_delegation=False,
-            max_iterations=1,  # Only 1 iteration to save quota
-            tools=[collaborative_filtering_recommendations]
-        )
-    
-    def create_tasks(self):
-        """Create minimal tasks for the agents."""
-        data_prep_task = Task(
-            description="Clean data",
-            agent=self.data_engineer,
-            expected_output="Clean data",
-            human_input=False
-        )
-        
-        cf_recommendation_task = Task(
-            description="Generate recommendations",
-            agent=self.cf_specialist,
-            expected_output="Product recommendations",
-            context=[data_prep_task],
-            human_input=False
-        )
-        
-        return [data_prep_task, cf_recommendation_task]
-    
-    def create_crew(self):
-        """Create and return the crew."""
-        tasks = self.create_tasks()
-        
-        return Crew(
-            agents=[self.data_engineer, self.cf_specialist],
-            tasks=tasks,
-            verbose=False,
-            max_rpm=1,      # EXTREMELY conservative - only 1 request per minute
-            respect_context_window=True
-        )
+        if self.llm_available and self.llm:
+            self.data_engineer = Agent(
+                role='Data Analysis Expert',
+                goal='Analyze retail transaction patterns and provide insights',
+                backstory="""You are an expert data analyst who specializes in retail analytics. 
+                You analyze customer behavior, transaction patterns, and provide actionable business insights.""",
+                verbose=True,
+                llm=self.llm,
+                allow_delegation=False
+            )
+            
+            self.cf_specialist = Agent(
+                role='Recommendation Analysis Expert', 
+                goal='Analyze product recommendations and explain customer preferences',
+                backstory="""You are a recommendation system expert who analyzes collaborative filtering results.
+                You explain why certain products are recommended and identify customer behavior patterns.""",
+                verbose=True,
+                llm=self.llm,
+                allow_delegation=False
+            )
+        else:
+            self.data_engineer = None
+            self.cf_specialist = None
+            print("⚠️ AI agents disabled - running in offline mode")
     
     def run_recommendations(self, df, target_user_id):
-        """Run the recommendation process with ultra-conservative quota usage."""
-        print("🔄 Starting minimal CrewAI analysis to preserve quota...")
+        """Run the recommendation process with CrewAI analysis."""
         
-        try:
-            crew = self.create_crew()
-            
-            inputs = {
-                'df': df,
-                'target_user_id': target_user_id
-            }
-            
-            # Single attempt only to preserve quota
-            results = crew.kickoff(inputs=inputs)
-            print("✅ CrewAI analysis completed successfully!")
-            return results
-            
-        except Exception as e:
-            error_msg = str(e).lower()
-            if any(keyword in error_msg for keyword in ["429", "quota", "rate limit", "resource_exhausted"]):
-                print("⚠️  GROQ QUOTA EXCEEDED")
-                print("💡 Groq typically has higher limits - check your API key")
-                return self._quota_exceeded_fallback(df, target_user_id)
-            elif any(keyword in error_msg for keyword in ["503", "overloaded", "unavailable"]):
-                print("⚠️  Groq service temporarily unavailable")
-                print("💡 Groq is usually faster - trying fallback analysis")
-                return self._quota_exceeded_fallback(df, target_user_id)
-            else:
-                print(f"❌ API Error: {e}")
-                return self._quota_exceeded_fallback(df, target_user_id)
-    
-    def _quota_exceeded_fallback(self, df, target_user_id):
-        """Provide analysis without using API quota."""
-        print("🔄 Providing offline analysis to preserve quota...")
+        print("🔄 Starting CrewAI analysis with Gemini AI...")
         
-        try:
-            # Get user info without API calls
-            user_data = df[df['CustomerID'] == target_user_id]
-            if user_data.empty:
-                district = "Unknown"
-                purchase_count = 0
-            else:
-                district = user_data['District'].mode().values[0] if len(user_data['District'].mode().values) > 0 else "Unknown"
-                purchase_count = len(user_data)
-            
-            # Simple district analysis
-            district_stats = df['District'].value_counts()
-            total_customers = df['CustomerID'].nunique()
-            total_products = df['StockCode'].nunique()
-            
-            analysis = f"""
-=== OFFLINE ANALYSIS (Quota-Preserving) ===
-
-Target User Analysis:
-• User ID: {target_user_id}
-• District: {district}
-• Purchase History: {purchase_count} transactions
-• Status: {'Active' if purchase_count > 0 else 'New/Inactive'} customer
-
+        # First, run the actual recommendation logic
+        from src.models.recommendations import CollaborativeFiltering
+        cf_model = CollaborativeFiltering()
+        recommendations = cf_model.get_recommendations(df, target_user_id, top_n=10)
+        
+        # Get basic statistics
+        total_customers = df['CustomerID'].nunique()
+        total_products = df['StockCode'].nunique()
+        user_transactions = len(df[df['CustomerID'] == target_user_id])
+        
+        # Get user's country/district
+        user_data = df[df['CustomerID'] == target_user_id]
+        user_country = user_data['Country'].mode().values[0] if not user_data.empty else 'Unknown'
+        user_district = user_data.get('District', pd.Series(['Unknown'])).mode().values[0] if not user_data.empty else 'Unknown'
+        
+        # Create summary text for agents to analyze
+        data_summary = f"""
 Dataset Overview:
-• Total Customers: {total_customers:,}
-• Total Products: {total_products:,}
-• Transactions: {len(df):,}
-
-District Distribution:
-{district_stats.head().to_string()}
-
-Recommendations:
-1. Focus on {district} region for similar customers
-2. Leverage collaborative filtering within same district
-3. Consider top products from {district} market
-4. Geographic segmentation is key for this dataset
-
-Note: This analysis preserves your API quota. 
-For AI-powered insights, use when quota is available.
+- Total customers: {total_customers:,}
+- Total products: {total_products:,} 
+- Total transactions: {len(df):,}
+- Target customer {target_user_id}: {user_transactions} transactions from {user_country} ({user_district})
+        """
+        
+        # Format recommendations for analysis
+        if recommendations is not None and not recommendations.empty:
+            rec_summary = f"""
+Collaborative Filtering Recommendations for Customer {target_user_id}:
+{recommendations[['StockCode', 'Description', 'Users']].head(8).to_string(index=False)}
             """
+        else:
+            rec_summary = f"No recommendations could be generated for customer {target_user_id}"
+        
+        # Create tasks for CrewAI agents
+        data_task = Task(
+            description=f"""Analyze this e-commerce dataset summary and provide insights:
             
-            return analysis.strip()
+            {data_summary}
             
-        except Exception as e:
-            return f"Analysis unavailable due to error: {e}"
+            Focus on:
+            1. Dataset scale and customer engagement levels
+            2. Geographic distribution patterns 
+            3. Customer transaction behavior
+            4. Business implications""",
+            agent=self.data_engineer,
+            expected_output="Comprehensive analysis of dataset characteristics and customer behavior patterns",
+            human_input=False
+        )
+        
+        rec_task = Task(
+            description=f"""Analyze these product recommendations and explain the patterns:
+            
+            {rec_summary}
+            
+            Focus on:
+            1. Product category patterns in recommendations
+            2. Customer preference insights
+            3. Recommendation quality assessment
+            4. Business value of these suggestions""",
+            agent=self.cf_specialist,
+            expected_output="Detailed analysis of recommendation patterns and customer preferences",
+            context=[data_task],
+            human_input=False
+        )
+        
+        # Create and run crew
+        crew = Crew(
+            agents=[self.data_engineer, self.cf_specialist],
+            tasks=[data_task, rec_task],
+            verbose=True,
+            respect_context_window=True
+        )
+        
+        results = crew.kickoff()
+        print("✅ CrewAI analysis completed successfully!")
+        return results
+    
+   

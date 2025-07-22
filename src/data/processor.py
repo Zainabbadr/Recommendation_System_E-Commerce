@@ -107,7 +107,7 @@ class DataProcessor:
 
 
 @tool("retail_data_preparation")
-def prepare_data(df):
+def prepare_data(df_json: str):
     """
     Prepare the retail transaction data by:
     - Dropping rows with missing CustomerID or Description
@@ -118,5 +118,15 @@ def prepare_data(df):
     - Adding District column based on Country
     - Removing duplicates
     """
+    import json
+    from io import StringIO
+    
+    # Convert JSON string back to DataFrame
+    df = pd.read_json(StringIO(df_json))
+    
+    # Run the original logic
     processor = DataProcessor()
-    return processor.clean_data(df)
+    cleaned_df = processor.clean_data(df)
+    
+    # Return summary as string for CrewAI compatibility
+    return f"Data preparation completed:\n- Original shape: {df.shape}\n- Cleaned shape: {cleaned_df.shape}\n- Districts added: {cleaned_df['District'].value_counts().to_dict()}"

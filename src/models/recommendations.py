@@ -182,10 +182,23 @@ class CategoryClustering:
 
 
 @tool("retail_recommendation_engine")
-def collaborative_filtering_recommendations(df, target_user_id, top_n=10):
+def collaborative_filtering_recommendations(df_json: str, target_user_id: int, top_n: int = 10):
     """
     Generate product recommendations using collaborative filtering.
     """
+    import json
+    from io import StringIO
+    
+    # Convert JSON string back to DataFrame
+    df = pd.read_json(StringIO(df_json))
+    
+    # Run the original logic
     cf_model = CollaborativeFiltering()
     cf_model.fit(df)
-    return cf_model.get_recommendations(target_user_id, df, top_n)
+    recommendations = cf_model.get_recommendations(target_user_id, df, top_n)
+    
+    # Return as string for CrewAI compatibility
+    if isinstance(recommendations, pd.DataFrame):
+        return f"Collaborative Filtering Recommendations:\n{recommendations.to_string(index=False)}"
+    else:
+        return f"Collaborative Filtering Result: {recommendations}"

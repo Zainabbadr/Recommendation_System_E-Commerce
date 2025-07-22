@@ -7,9 +7,12 @@ crewai==0.76.2
 crewai-tools>=0.4.0
 langchain>=0.1.0
 langgraph>=0.0.50
-langchain-groq>=0.1.0
+google-generativeai>=0.3.0
 langchain-google-genai>=1.0.0
-groq>=0.4.0
+# langchain-groq>=0.1.0 (replaced with Gemini)
+# groq>=0.4.0 (replaced with Gemini)
 numpy>=1.24.0
 scipy>=1.10.0
-onnxruntime-cpu>=1.16.0,<1.19.0
+requests
+# ollama>=0.1.0 (replaced with Gemini)
+# onnxruntime (not needed for Gemini)
