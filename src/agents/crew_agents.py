@@ -18,123 +18,193 @@ logging.getLogger("opentelemetry").setLevel(logging.CRITICAL)
 class RecommendationAgents:
     """Class to manage recommendation system agents."""
     
-    def __init__(self, api_key="AIzaSyCLYT2SLfK8VbHBjXMtr04PhTvN92lJXa8"):
-        # Try the format that worked in your tests
-        self.llm = LLM(
-            model="gemini/gemini-1.5-flash",  # Format that worked
-            api_key=api_key.strip(),
-            temperature=0.7,
-            verbose=False,
-            max_tokens=200,
-        )
-        print("🤖 Using Gemini AI model (gemini/ format)")
-        self.llm_available = True
+    def __init__(self, api_key=None):
+        if api_key and api_key.strip():
+            # Use Gemini with provided API key
+            try:
+                self.llm = LLM(
+                    model="gemini/gemini-1.5-flash",  # Format that worked
+                    api_key=api_key.strip(),
+                    temperature=0.7,
+                    verbose=False,
+                    max_tokens=200,
+                )
+                print("🤖 Using Gemini AI model (gemini/ format)")
+                self.llm_available = True
+            except Exception as e:
+                print(f"⚠️ Failed to initialize Gemini: {e}")
+                print("💡 Get your API key from: https://aistudio.google.com/app/apikey")
+                self.llm = None
+                self.llm_available = False
+        else:
+            print("⚠️ No Gemini API key provided")
+            print("💡 Get your API key from: https://aistudio.google.com/app/apikey")
+            self.llm = None
+            self.llm_available = False
         
         if self.llm_available and self.llm:
             self.data_engineer = Agent(
-                role='Data Analysis Expert',
-                goal='Analyze retail transaction patterns and provide insights',
-                backstory="""You are an expert data analyst who specializes in retail analytics. 
-                You analyze customer behavior, transaction patterns, and provide actionable business insights.""",
+                role='Retail Data Specialist',
+                goal='Prepare transaction data for recommendation analysis',
+                backstory="""Expert in cleaning and transforming retail transaction data
+                with special focus on geographic segmentation""",
                 verbose=True,
                 llm=self.llm,
-                allow_delegation=False
+                allow_delegation=False,
+                max_iterations=3,  # Prevent infinite loops
+                tools=[prepare_data]
             )
             
             self.cf_specialist = Agent(
-                role='Recommendation Analysis Expert', 
-                goal='Analyze product recommendations and explain customer preferences',
-                backstory="""You are a recommendation system expert who analyzes collaborative filtering results.
-                You explain why certain products are recommended and identify customer behavior patterns.""",
+                role='Collaborative Filtering Specialist',
+                goal='Generate personalized product recommendations',
+                backstory='Data scientist specializing in neighborhood-based recommendation systems',
                 verbose=True,
                 llm=self.llm,
-                allow_delegation=False
+                tools=[collaborative_filtering_recommendations]
             )
         else:
             self.data_engineer = None
             self.cf_specialist = None
             print("⚠️ AI agents disabled - running in offline mode")
     
+    def create_tasks(self, df_json, target_user_id):
+        """Create tasks with embedded data parameters."""
+        data_prep_task = Task(
+            description="""Prepare retail transaction data by:
+            1. Handling missing values appropriately
+            2. Ensuring correct data types
+            3. Validating district information""",
+            agent=self.data_engineer,
+            expected_output="""Cleaned DataFrame with:
+            - Validated districts (Europe, Oceania, Asia-Pacific, North America, Middle East, Unknown, Africa, South America)
+            - Proper data types
+            - Missing values handled""",
+            output_file="prepared_data.csv",
+            human_input=False
+        )
+        
+        cf_recommendation_task = Task(
+            description="""Generate recommendations using existing collaborative filtering function:
+            1. Process only validated district data
+            2. Apply user-based collaborative filtering
+            3. Return top 10 recommendations per user
+            4. Include similarity metrics""",
+            agent=self.cf_specialist,
+            expected_output="""Dictionary containing:
+            - target_user_id
+            - district
+            - Description of product
+            - top_10_recommendations
+            - similar_users_used
+            - similarity_scores""",
+            context=[data_prep_task],
+            output_file="recommendations.json",
+            human_input=False
+        )
+        
+        return [data_prep_task, cf_recommendation_task]
+    
+    def create_crew(self, df_json, target_user_id):
+        """Create and return the crew with embedded data."""
+        tasks = self.create_tasks(df_json, target_user_id)
+        
+        return Crew(
+            agents=[self.data_engineer, self.cf_specialist],
+            tasks=tasks,
+            verbose=False,
+            respect_context_window=True
+        )
+    
     def run_recommendations(self, df, target_user_id):
-        """Run the recommendation process with CrewAI analysis."""
+        """Run the recommendation process with JSON-serializable DataFrame."""
+        
+        # Check if agents are available
+        if not self.llm_available or not self.data_engineer or not self.cf_specialist:
+            print("⚠️ Gemini AI not available - using offline analysis")
+            return self._analysis_fallback(df, target_user_id)
         
         print("🔄 Starting CrewAI analysis with Gemini AI...")
         
-        # First, run the actual recommendation logic
-        from src.models.recommendations import CollaborativeFiltering
-        cf_model = CollaborativeFiltering()
-        recommendations = cf_model.get_recommendations(df, target_user_id, top_n=10)
+        try:
+            # Convert sampled DataFrame to JSON
+            df_json = df.to_json(orient='records')
+            print(f"JSON data length: {len(df_json):,} characters")
+            
+            # Create crew with embedded data
+            crew = self.create_crew(df_json, target_user_id)
+            
+            # Simple inputs for tools to use
+            inputs = {
+                'df_json': df_json,
+                'target_user_id': int(target_user_id),
+                'top_n': 10
+            }
+                        
+            results = crew.kickoff(inputs=inputs)
+            print("✅ CrewAI analysis completed successfully!")
+            return results
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "invalid api key" in error_msg or "authentication" in error_msg:
+                print("❌ Gemini API Key Error: Please check your API key")
+                print("💡 Get a valid API key from: https://aistudio.google.com/app/apikey")
+            elif "groq" in error_msg:
+                print("❌ System trying to use Groq instead of Gemini")
+                print("💡 This suggests a configuration issue - using offline mode")
+            else:
+                print(f"❌ Error during analysis: {e}")
+            return self._analysis_fallback(df, target_user_id)
+    
+    def _analysis_fallback(self, df, target_user_id):
+        """Provide analysis without using the LLM."""
+        print("🔄 Providing offline analysis due to error...")
         
-        # Get basic statistics
-        total_customers = df['CustomerID'].nunique()
-        total_products = df['StockCode'].nunique()
-        user_transactions = len(df[df['CustomerID'] == target_user_id])
-        
-        # Get user's country/district
-        user_data = df[df['CustomerID'] == target_user_id]
-        user_country = user_data['Country'].mode().values[0] if not user_data.empty else 'Unknown'
-        user_district = user_data.get('District', pd.Series(['Unknown'])).mode().values[0] if not user_data.empty else 'Unknown'
-        
-        # Create summary text for agents to analyze
-        data_summary = f"""
+        try:
+            # Get user info without API calls
+            user_data = df[df['CustomerID'] == target_user_id]
+            if user_data.empty:
+                country = "Unknown"
+                purchase_count = 0
+            else:
+                country = user_data['Country'].mode().values[0] if len(user_data['Country'].mode().values) > 0 else "Unknown"
+                purchase_count = len(user_data)
+            
+            # Simple country analysis
+            country_stats = df['Country'].value_counts()
+            total_customers = df['CustomerID'].nunique()
+            total_products = df['StockCode'].nunique()
+            
+            analysis = f"""
+=== OFFLINE ANALYSIS (Fallback) ===
+
+Target User Analysis:
+• User ID: {target_user_id}
+• Country: {country}
+• Purchase History: {purchase_count} transactions
+• Status: {'Active' if purchase_count > 0 else 'New/Inactive'} customer
+
 Dataset Overview:
-- Total customers: {total_customers:,}
-- Total products: {total_products:,} 
-- Total transactions: {len(df):,}
-- Target customer {target_user_id}: {user_transactions} transactions from {user_country} ({user_district})
-        """
-        
-        # Format recommendations for analysis
-        if recommendations is not None and not recommendations.empty:
-            rec_summary = f"""
-Collaborative Filtering Recommendations for Customer {target_user_id}:
-{recommendations[['StockCode', 'Description', 'Users']].head(8).to_string(index=False)}
+• Total Customers: {total_customers:,}
+• Total Products: {total_products:,}
+• Transactions: {len(df):,}
+
+Country Distribution (Top 5):
+{country_stats.head().to_string()}
+
+Recommendations:
+1. Focus on {country} market for similar customers
+2. Leverage collaborative filtering within same country
+3. Consider top products from {country} market
+4. Geographic segmentation is key for this dataset
+
+Note: This is a fallback analysis due to missing API key or AI system error.
             """
-        else:
-            rec_summary = f"No recommendations could be generated for customer {target_user_id}"
-        
-        # Create tasks for CrewAI agents
-        data_task = Task(
-            description=f"""Analyze this e-commerce dataset summary and provide insights:
             
-            {data_summary}
+            return analysis.strip()
             
-            Focus on:
-            1. Dataset scale and customer engagement levels
-            2. Geographic distribution patterns 
-            3. Customer transaction behavior
-            4. Business implications""",
-            agent=self.data_engineer,
-            expected_output="Comprehensive analysis of dataset characteristics and customer behavior patterns",
-            human_input=False
-        )
-        
-        rec_task = Task(
-            description=f"""Analyze these product recommendations and explain the patterns:
-            
-            {rec_summary}
-            
-            Focus on:
-            1. Product category patterns in recommendations
-            2. Customer preference insights
-            3. Recommendation quality assessment
-            4. Business value of these suggestions""",
-            agent=self.cf_specialist,
-            expected_output="Detailed analysis of recommendation patterns and customer preferences",
-            context=[data_task],
-            human_input=False
-        )
-        
-        # Create and run crew
-        crew = Crew(
-            agents=[self.data_engineer, self.cf_specialist],
-            tasks=[data_task, rec_task],
-            verbose=True,
-            respect_context_window=True
-        )
-        
-        results = crew.kickoff()
-        print("✅ CrewAI analysis completed successfully!")
-        return results
+        except Exception as e:
+            return f"Analysis unavailable due to error: {e}"
     
    

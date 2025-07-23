@@ -43,7 +43,7 @@ from src.utils.config import Config
 class ECommerceRecommendationSystem:
     """Main class for the e-commerce recommendation system."""
     
-    def __init__(self, config=None, gemini_api_key=None):
+    def __init__(self, config=None):
         self.config = config or Config()
         self.data_processor = DataProcessor()
         self.cf_model = CollaborativeFiltering()
@@ -51,12 +51,7 @@ class ECommerceRecommendationSystem:
         
         # Only create agents if available
         if AGENTS_AVAILABLE and RecommendationAgents:
-            try:
-                self.agents = RecommendationAgents(api_key=gemini_api_key)
-                print("✅ CrewAI agents initialized with Gemini")
-            except Exception as e:
-                print(f"⚠️ Failed to initialize agents with Gemini: {e}")
-                self.agents = None
+            self.agents = RecommendationAgents()
         else:
             self.agents = None
             print("⚠️ AI agents disabled due to dependency issues")
