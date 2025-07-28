@@ -1,0 +1,7 @@
+pandas
+kagglehub
+seaborn
+matplotlib
+numpy
+sentence-transformers
+scikit-learn
