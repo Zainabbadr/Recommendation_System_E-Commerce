@@ -10,7 +10,7 @@ from sklearn.metrics.pairwise import linear_kernel
 from sentence_transformers import SentenceTransformer
 from collections import defaultdict
 from langchain_core.tools import tool
-
+from sklearn.preprocessing import MinMaxScaler
 
 class CollaborativeFiltering:
     """Collaborative filtering recommendation system."""
@@ -26,93 +26,106 @@ class CollaborativeFiltering:
         ).fillna(0)
         return self
 
-    def get_recommendations(self, target_user_id, df, top_n=10):
+    def get_recommendations(self, data, target_user_id, stock_codes, top_n=10):
         """Get recommendations for a target user."""
-        if target_user_id not in self.user_item_matrix.index:
-            return f"CustomerID {target_user_id} not found."
-
-        # Get target user's district
-        target_district = (
-            df[df["CustomerID"] == target_user_id]["District"].mode().values[0]
-        )
-
-        # Filter to only customers in the same district
-        same_district_users = df[df["District"] == target_district][
-            "CustomerID"
-        ].unique()
-        same_district_users = [
-            uid
-            for uid in same_district_users
-            if uid in self.user_item_matrix.index and uid != target_user_id
-        ]
-
-        # Create new matrix only for these users
-        filtered_user_item_matrix = self.user_item_matrix.loc[
-            [target_user_id] + same_district_users
-        ]
-
-        # Compute cosine similarity
-        similarity_matrix = cosine_similarity(filtered_user_item_matrix)
-        target_index = filtered_user_item_matrix.index.get_loc(target_user_id)
-        similarities = similarity_matrix[target_index]
-
-        # Get top 10 similar users (excluding self)
-        similar_users = [
-            (uid, similarities[i])
-            for i, uid in enumerate(filtered_user_item_matrix.index)
-            if uid != target_user_id
-        ]
-        top_similar_users = sorted(similar_users, key=lambda x: x[1], reverse=True)[:10]
-        top_user_ids = [uid for uid, _ in top_similar_users]
-
-        # Recommendation logic
-        target_user_row = self.user_item_matrix.loc[target_user_id]
-        item_quantity_map = defaultdict(float)
-        item_user_map = defaultdict(list)
-
-        for uid in top_user_ids:
-            similar_user_row = self.user_item_matrix.loc[uid]
-            recommended_mask = (similar_user_row > 0) & (target_user_row == 0)
-            recommended_items = self.user_item_matrix.columns[recommended_mask]
-
-            for item in recommended_items:
-                item_quantity_map[item] += similar_user_row[item]
-                item_user_map[item].append(uid)
-
-        # Build result
-        if not item_quantity_map:
-            return pd.DataFrame(
-                columns=[
-                    "StockCode",
-                    "Description",
-                    "TotalQuantity",
-                    "Users",
-                    "District",
-                ]
-            )
-
-        rec_df = pd.DataFrame(
-            [
-                {
-                    "StockCode": item,
-                    "TotalQuantity": item_quantity_map[item],
-                    "Users": item_user_map[item],
-                    "District": target_district,
+        try:
+            if target_user_id not in data['CustomerID'].unique():
+                return {
+                    'user_id': target_user_id,
+                    'status': f'CustomerID {target_user_id} not found',
+                    'recommendations': []
                 }
-                for item in item_quantity_map
-            ]
-        )
 
-        rec_df = rec_df.sort_values(by="TotalQuantity", ascending=False).head(top_n)
-        rec_df = rec_df.merge(
-            df[["StockCode", "Description"]].drop_duplicates(),
-            on="StockCode",
-            how="left",
-        )
+            invalid_stock_codes = [code for code in stock_codes if code not in data['StockCode'].unique()]
+            if invalid_stock_codes:
+                return {
+                    'user_id': target_user_id,
+                    'status': f'Stock codes not found: {invalid_stock_codes}',
+                    'recommendations': []
+                }
 
-        return rec_df[
-            ["StockCode", "Description", "TotalQuantity", "Users", "District"]
-        ]
+            user_item_matrix = data.pivot_table(
+                index='CustomerID',
+                columns='StockCode',
+                values='Quantity',
+                aggfunc='mean'
+            ).fillna(0)
+
+            # User’s current and added items
+            current_items = set(user_item_matrix.loc[target_user_id][user_item_matrix.loc[target_user_id] > 0].index)
+            updated_items = current_items.union(set(stock_codes))
+            for item in updated_items:
+                user_item_matrix.loc[target_user_id, item] = 1
+
+            # Get district of target user
+            target_district = data[data['CustomerID'] == target_user_id]['District'].mode().values[0]
+            district_users = data[
+                (data['District'] == target_district) &
+                (data['CustomerID'] != target_user_id)
+            ]['CustomerID'].unique()
+            district_users = [uid for uid in district_users if uid in user_item_matrix.index]
+
+            # Filter matrix and compute similarities
+            filtered_matrix = user_item_matrix.loc[[target_user_id] + district_users]
+            similarities = cosine_similarity(filtered_matrix)[0][1:]
+
+            similar_users = sorted(zip(district_users, similarities), key=lambda x: x[1], reverse=True)[:10]
+
+            # Score recommendations
+            recommendations = defaultdict(lambda: {'score': 0, 'users': []})
+            for similar_user, similarity in similar_users:
+                similar_items = user_item_matrix.loc[similar_user]
+                for item in similar_items[similar_items > 0].index:
+                    if item not in updated_items:
+                        recommendations[item]['score'] += similarity
+                        recommendations[item]['users'].append(similar_user)
+
+            if not recommendations:
+                return {
+                    'user_id': target_user_id,
+                    'district': target_district,
+                    'status': 'No new recommendations found',
+                    'recommendations': []
+                }
+
+            # Format recommendation output
+            result = []
+            for item, rec_data in sorted(recommendations.items(), key=lambda x: x[1]['score'], reverse=True)[:top_n]:
+                item_info = data[data['StockCode'] == item].iloc[0]
+                result.append({
+                    'stock_code': item,
+                    'description': item_info['Description'],
+                    'price': round(float(item_info['UnitPrice']), 2),
+                    'recommended_by': rec_data['users']
+                })
+
+            # Get user items info (original + added)
+            user_items_info = data[data['StockCode'].isin(updated_items)]
+            user_items_summary = user_items_info.groupby('StockCode').agg({
+                'Description': 'first',
+                'UnitPrice': 'mean'
+            }).reset_index()
+
+            user_items_list = user_items_summary.to_dict(orient='records')
+            for item in user_items_list:
+                item['UnitPrice'] = round(float(item['UnitPrice']), 2)
+
+            return {
+                'user_id': target_user_id,
+                'district': target_district,
+                'status': 'success',
+                'user_items': user_items_list,
+                'recommendations': result
+            }
+
+        except Exception as e:
+            return {
+                'user_id': target_user_id,
+                'status': f'Error: {str(e)}',
+                'recommendations': []
+            }
+
+
 
 
 class ContentBasedFiltering:
@@ -129,34 +142,82 @@ class ContentBasedFiltering:
         self.tfidf_matrix = self.vectorizer.fit_transform(df["Description"])
         return self
 
-    def get_recommendations(self, input_description, top_n=5):
+    def get_recommendations(self, stock_codes, data, target_user_id=None, top_n=5):
         """Get recommendations based on input description."""
         # Preprocess input description
-        clean_input = input_description.lower()
-        clean_input = "".join(
-            char for char in clean_input if char.isalnum() or char.isspace()
-        )
+        try:
+            # Vectorize descriptions once
+            vectorizer = TfidfVectorizer(stop_words='english')
+            tfidf_matrix = vectorizer.fit_transform(data['Description'])
 
-        # Vectorize input
-        input_vec = self.vectorizer.transform([clean_input])
+            all_seen_descriptions = set()
+            all_results = []
+            user_items_info = []
 
-        # Compute similarity between input and all items
-        sim_scores = linear_kernel(input_vec, self.tfidf_matrix).flatten()
-        sim_indices = sim_scores.argsort()[::-1]
+            for stock in stock_codes:
+                indices = data.index[data['StockCode'] == stock].tolist()
+                if not indices:
+                    all_results.append({
+                        "stock_code": stock,
+                        "status": f"Stock code '{stock}' not found",
+                        "recommendations": []
+                    })
+                    continue
 
-        # Filter out exact duplicates of input description
-        seen = set()
-        recommendations = []
-        for i in sim_indices:
-            desc = self.data.iloc[i]["Description"]
-            if desc != clean_input and desc not in seen:
-                seen.add(desc)
-                recommendations.append(i)
-            if len(recommendations) == top_n:
-                break
+                input_idx = indices[0]
+                input_vector = tfidf_matrix[input_idx]
+                similarity_scores = cosine_similarity(input_vector, tfidf_matrix).flatten()
 
-        return self.data.iloc[recommendations][["Description"]]
+                input_description = data.at[input_idx, "Description"]
+                input_unit_price = float(data.at[input_idx, "UnitPrice"])  # convert here
+                user_items_info.append({
+                    "stock_code": stock,
+                    "description": input_description,
+                    "unit_price": input_unit_price
+                })
 
+                seen_descriptions = set(all_seen_descriptions)
+                seen_descriptions.add(input_description)
+
+                sorted_indices = similarity_scores.argsort()[::-1]
+                recommendations = []
+
+                for idx in sorted_indices:
+                    if idx == input_idx:
+                        continue
+                    desc = data.at[idx, "Description"]
+                    if desc not in seen_descriptions:
+                        recommendations.append({
+                            "stock_code": data.at[idx, "StockCode"],
+                            "description": desc,
+                            "unit_price": float(data.at[idx, "UnitPrice"])  # convert here too
+                        })
+                        seen_descriptions.add(desc)
+                        all_seen_descriptions.add(desc)
+
+                    if len(recommendations) >= top_n:
+                        break
+
+                status = "success" if recommendations else "No similar recommendations found"
+
+                all_results.append({
+                    "stock_code": stock,
+                    "status": status,
+                    "recommendations": recommendations
+                })
+
+            return {
+                "target_user_id": target_user_id,
+                "target_user_items": user_items_info,
+                "results": all_results
+            }
+
+        except Exception as e:
+            return {
+                "target_user_id": target_user_id,
+                "status": f"Error: {str(e)}",
+                "results": []
+            }
 
 class CategoryClustering:
     """Clustering for product categorization."""
@@ -221,3 +282,91 @@ def collaborative_filtering_recommendations(
         return f"Collaborative Filtering Recommendations:\n{recommendations.to_string(index=False)}"
     else:
         return f"Collaborative Filtering Result: {recommendations}"
+    
+
+def weighted_hybrid_recommendations(input_stock_code, target_user_id, data, alpha=0.6, top_n=5):
+    try:
+        # Vectorize descriptions
+        vectorizer = TfidfVectorizer(stop_words='english')
+        tfidf_matrix = vectorizer.fit_transform(data['Description'])
+
+        # Locate input stock code
+        indices = data.index[data['StockCode'] == input_stock_code].tolist()
+        if not indices:
+            return {"Top Recommendations": []}
+
+        input_idx = indices[0]
+        input_vector = tfidf_matrix[input_idx]
+
+        # Content-based scores
+        content_sim_scores = cosine_similarity(input_vector, tfidf_matrix).flatten()
+
+        # Collaborative filtering setup
+        user_item_matrix = data.pivot_table(
+            index='CustomerID',
+            columns='StockCode',
+            values='Quantity',
+            aggfunc='mean'
+        ).fillna(0)
+
+        if target_user_id not in user_item_matrix.index:
+            return {"Top Recommendations": []}
+
+        target_district = data[data['CustomerID'] == target_user_id]['District'].mode().values[0]
+        district_users = data[
+            (data['District'] == target_district) &
+            (data['CustomerID'] != target_user_id)
+        ]['CustomerID'].unique()
+        district_users = [uid for uid in district_users if uid in user_item_matrix.index]
+
+        filtered_matrix = user_item_matrix.loc[[target_user_id] + district_users]
+        similarities = cosine_similarity(filtered_matrix)[0][1:]
+
+        similar_users = sorted(zip(district_users, similarities), key=lambda x: x[1], reverse=True)[:10]
+
+        # Collaborative filtering scores
+        collab_scores = np.zeros(len(data))
+        for similar_user, sim in similar_users:
+            similar_items = user_item_matrix.loc[similar_user]
+            for stock in similar_items[similar_items > 0].index:
+                idxs = data.index[data['StockCode'] == stock].tolist()
+                for idx in idxs:
+                    collab_scores[idx] += sim
+
+        # Normalize both scores
+        scaler = MinMaxScaler()
+        content_norm = scaler.fit_transform(content_sim_scores.reshape(-1, 1)).flatten() if len(set(content_sim_scores)) > 1 else content_sim_scores
+        collab_norm = scaler.fit_transform(collab_scores.reshape(-1, 1)).flatten() if len(set(collab_scores)) > 1 else collab_scores
+
+        # Combine scores
+        final_scores = alpha * content_norm + (1 - alpha) * collab_norm
+        top_indices = final_scores.argsort()[::-1]
+
+        input_desc = data.at[input_idx, 'Description']
+        seen_descriptions = {input_desc.lower()}
+        recommendations = []
+
+        for idx in top_indices:
+            if idx == input_idx or final_scores[idx] <= 0:
+                continue
+
+            desc = data.at[idx, 'Description']
+            if desc.lower() in seen_descriptions:
+                continue
+
+            recommendations.append({
+                "Stock Code": data.at[idx, 'StockCode'],
+                "Description": desc,
+                "Unit Price": round(float(data.at[idx, 'UnitPrice']), 2)
+            })
+
+            seen_descriptions.add(desc.lower())
+
+            if len(recommendations) >= top_n:
+                break
+
+        return {"Top Recommendations": recommendations}
+
+    except Exception as e:
+        return {"Top Recommendations": [], "Error": str(e)}
+
