@@ -1,7 +1,8 @@
 """
-Data processing package for the e-commerce recommendation system.
+Data processing module initialization.
 """
 
-from .processor import DataProcessor, prepare_data
+# Change this import
+from .processor import DataProcessor
 
-__all__ = ['DataProcessor', 'prepare_data']
+# Old version: from .processor import DataProcessor, prepare_data

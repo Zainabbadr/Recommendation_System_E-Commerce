@@ -1,36 +1,63 @@
-import sys
-import os
-from pathlib import Path
-# Add src to path for imports
-sys.path.append(str(Path(__file__).parent / "src"))
-
 from src.agents.crew_agents import RecommendationAgents
+from src.data.processor import DataProcessor
+
 
 def main():
-    # Example customer ID
+    # Load and process data
+    print("📊 Loading and processing data...")
+    processor = DataProcessor()
+
+    # Load dataset
+    df = processor.load_dataset()
+    if df is None:
+        print("❌ Failed to load dataset")
+        return
+
+    # Clean data
+    df_clean = processor.clean_data(df)
+    print(f"✅ Data loaded and cleaned: {len(df_clean)} rows")
+
+    # Example customer ID - validate it exists
     target_user_id = 17850
-    
+
+    # Check if customer exists
+    if target_user_id not in df_clean["CustomerID"].unique():
+        print(f"❌ Customer {target_user_id} not found in dataset")
+        available_customers = df_clean["CustomerID"].unique()[:10]
+        print(f"Available customer IDs (first 10): {available_customers}")
+        return
+
     # Example number of recommendations to return
     top_n = 5
-    
+
     # Optional list of stock codes to filter recommendations
-    # Set to None to get recommendations across all products
-    stock_codes = ["85123A","71053","84406B"]  # Example: ["85123A", "71053", "84406B"]
-    
-    print(f"🔍 Getting recommendations for customer {target_user_id}...")
-    
-    # Initialize the recommendation agents
+    stock_codes = ["85123A", "71053", "84406B"]
+
+    # Validate stock codes exist
+    available_stocks = df_clean["StockCode"].unique()
+    valid_stock_codes = [code for code in stock_codes if code in available_stocks]
+    if not valid_stock_codes:
+        print(f"❌ None of the stock codes {stock_codes} found in dataset")
+        print(f"Available stock codes (first 10): {available_stocks[:10]}")
+        return
+
+    print(f"🔍 Getting recommendations for customer {target_user_id} using Groq API...")
+    print(f"📦 Valid stock codes: {valid_stock_codes}")
+
+    # Initialize with Groq API (uses API key from crew_agents.py or environment)
     agents = RecommendationAgents()
-    
-    # Run recommendations with the simplified inputs
+
+    # Set the dataframe for the tools
+    agents.set_dataframe(df_clean)
+
+    # Run recommendations with Groq API
     results = agents.run_recommendations(
-        target_user_id=target_user_id,
-        top_n=top_n,
-        stock_codes=stock_codes
+        target_user_id=target_user_id, stock_codes=valid_stock_codes, top_n=top_n
     )
-    
-    print("\n=== Recommendation Results ===")
+
+    print("\n=== Recommendation Results from Groq API ===")
     print(results)
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,89 @@
+{% extends 'recommendations/base.html' %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>🎯 Get Recommendations</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="target_user_id" class="form-label">Customer ID</label>
+                        <input type="number" class="form-control" id="target_user_id" name="target_user_id" 
+                               value="{{ target_user_id|default:'17850' }}" required>
+                        <small class="form-text text-muted">Enter the customer ID to get recommendations for</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="stock_codes" class="form-label">Stock Codes</label>
+                        <input type="text" class="form-control" id="stock_codes" name="stock_codes" 
+                               value="{{ stock_codes|join:', '|default:'85123A, 71053, 84406B' }}" required>
+                        <small class="form-text text-muted">Enter stock codes separated by commas (e.g., 85123A, 71053, 84406B)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="top_n" class="form-label">Number of Recommendations</label>
+                        <select class="form-control" id="top_n" name="top_n">
+                            <option value="3" {% if top_n == 3 %}selected{% endif %}>3</option>
+                            <option value="5" {% if top_n == 5 %}selected{% endif %}>5</option>
+                            <option value="10" {% if top_n == 10 %}selected{% endif %}>10</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">🚀 Get Recommendations</button>
+                </form>
+            </div>
+        </div>
+        
+        {% if error %}
+        <div class="alert alert-danger mt-3">
+            <strong>Error:</strong> {{ error }}
+            
+            {% if available_customers %}
+            <hr>
+            <strong>Available Customer IDs (sample):</strong>
+            <br>{{ available_customers|join:', ' }}
+            {% endif %}
+            
+            {% if sample_stocks %}
+            <hr>
+            <strong>Sample Stock Codes:</strong>
+            <br>{{ sample_stocks|join:', ' }}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-6">
+        {% if recommendations %}
+        <div class="card">
+            <div class="card-header">
+                <h5>🎁 Recommendations for Customer {{ target_user_id }}</h5>
+                <small class="text-muted">Based on stock codes: {{ stock_codes|join:', ' }}</small>
+            </div>
+            <div class="card-body">
+                {% for rec in recommendations %}
+                <div class="recommendation-card">
+                    <div>
+                        <h6 class="mb-1">{{ rec.description }}</h6>
+                        <p class="mb-1"><strong>Stock Code:</strong> {{ rec.stock_code }}</p>
+                        <p class="mb-1"><strong>Price:</strong> ${{ rec.unit_price }}</p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="card">
+            <div class="card-body text-center text-muted">
+                <h5>📋 No Recommendations Yet</h5>
+                <p>Fill out the form on the left to get AI-powered product recommendations!</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
