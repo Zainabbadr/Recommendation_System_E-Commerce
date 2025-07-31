@@ -1,89 +1,222 @@
 {% extends 'recommendations/base.html' %}
 
 {% block content %}
-<div class="row">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>🎯 Get Recommendations</h5>
-            </div>
-            <div class="card-body">
-                <form method="post">
-                    {% csrf_token %}
-                    <div class="mb-3">
-                        <label for="target_user_id" class="form-label">Customer ID</label>
-                        <input type="number" class="form-control" id="target_user_id" name="target_user_id" 
-                               value="{{ target_user_id|default:'17850' }}" required>
-                        <small class="form-text text-muted">Enter the customer ID to get recommendations for</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="stock_codes" class="form-label">Stock Codes</label>
-                        <input type="text" class="form-control" id="stock_codes" name="stock_codes" 
-                               value="{{ stock_codes|join:', '|default:'85123A, 71053, 84406B' }}" required>
-                        <small class="form-text text-muted">Enter stock codes separated by commas (e.g., 85123A, 71053, 84406B)</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="top_n" class="form-label">Number of Recommendations</label>
-                        <select class="form-control" id="top_n" name="top_n">
-                            <option value="3" {% if top_n == 3 %}selected{% endif %}>3</option>
-                            <option value="5" {% if top_n == 5 %}selected{% endif %}>5</option>
-                            <option value="10" {% if top_n == 10 %}selected{% endif %}>10</option>
-                        </select>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary">🚀 Get Recommendations</button>
-                </form>
-            </div>
-        </div>
-        
-        {% if error %}
-        <div class="alert alert-danger mt-3">
-            <strong>Error:</strong> {{ error }}
-            
-            {% if available_customers %}
-            <hr>
-            <strong>Available Customer IDs (sample):</strong>
-            <br>{{ available_customers|join:', ' }}
-            {% endif %}
-            
-            {% if sample_stocks %}
-            <hr>
-            <strong>Sample Stock Codes:</strong>
-            <br>{{ sample_stocks|join:', ' }}
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-    
-    <div class="col-md-6">
-        {% if recommendations %}
-        <div class="card">
-            <div class="card-header">
-                <h5>🎁 Recommendations for Customer {{ target_user_id }}</h5>
-                <small class="text-muted">Based on stock codes: {{ stock_codes|join:', ' }}</small>
-            </div>
-            <div class="card-body">
-                {% for rec in recommendations %}
-                <div class="recommendation-card">
-                    <div>
-                        <h6 class="mb-1">{{ rec.description }}</h6>
-                        <p class="mb-1"><strong>Stock Code:</strong> {{ rec.stock_code }}</p>
-                        <p class="mb-1"><strong>Price:</strong> ${{ rec.unit_price }}</p>
+<div class="container-fluid">
+    <!-- Tab Navigation -->
+    <ul class="nav nav-tabs" id="recommendationTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-recommendations" 
+                    type="button" role="tab" aria-controls="ai-recommendations" aria-selected="true">
+                🤖 AI Recommendations
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual-recommendations" 
+                    type="button" role="tab" aria-controls="manual-recommendations" aria-selected="false">
+                📊 Manual Recommendations
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content mt-3" id="recommendationTabContent">
+        <!-- AI Recommendations Tab -->
+        <div class="tab-pane fade show active" id="ai-recommendations" role="tabpanel" aria-labelledby="ai-tab">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🤖 AI-Powered Recommendations</h5>
+                            <small class="text-muted">Using advanced machine learning algorithms</small>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" id="ai-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="recommendation_type" value="ai">
+                                
+                                <div class="mb-3">
+                                    <label for="ai_target_user_id" class="form-label">Customer ID</label>
+                                    <input type="number" class="form-control" id="ai_target_user_id" name="target_user_id" 
+                                           value="{{ target_user_id|default:'17850' }}" required>
+                                    <small class="form-text text-muted">Enter the customer ID to get AI recommendations for</small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="ai_stock_codes" class="form-label">Stock Codes</label>
+                                    <input type="text" class="form-control" id="ai_stock_codes" name="stock_codes" 
+                                           value="{{ stock_codes|join:', '|default:'85123A, 71053, 84406B' }}" required>
+                                    <small class="form-text text-muted">Enter stock codes separated by commas</small>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-primary">🚀 Get AI Recommendations</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
-                {% endfor %}
+
+                <div class="col-md-6">
+                    {% if recommendations and recommendation_type == 'ai' %}
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🤖 AI Recommendations for Customer {{ target_user_id }}</h5>
+                            <small class="text-muted">Source: {{ recommendation_source|default:'AI Algorithm' }}</small>
+                        </div>
+                        <div class="card-body">
+                            {% for rec in recommendations %}
+                            <div class="recommendation-card">
+                                <div>
+                                    <h6 class="mb-1">{{ rec.description }}</h6>
+                                    <p class="mb-1"><strong>Stock Code:</strong> {{ rec.stock_code }}</p>
+                                    <p class="mb-1"><strong>Price:</strong> ${{ rec.unit_price }}</p>
+                                    {% if rec.confidence %}
+                                    <p class="mb-1"><strong>Confidence:</strong> {{ rec.confidence|floatformat:2 }}%</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="card">
+                        <div class="card-body text-center text-muted">
+                            <h5>🤖 AI Recommendations</h5>
+                            <p>Fill out the form to get AI-powered product recommendations!</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
-        </div>
-        {% else %}
-        <div class="card">
-            <div class="card-body text-center text-muted">
-                <h5>📋 No Recommendations Yet</h5>
-                <p>Fill out the form on the left to get AI-powered product recommendations!</p>
+
+            {% if error and recommendation_type == 'ai' %}
+            <div class="alert alert-warning mt-3">
+                <strong>AI System Notice:</strong> {{ error }}
+                <br><small>Falling back to manual recommendations...</small>
             </div>
+            {% endif %}
         </div>
-        {% endif %}
+
+        <!-- Manual Recommendations Tab -->
+        <div class="tab-pane fade" id="manual-recommendations" role="tabpanel" aria-labelledby="manual-tab">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📊 Manual Algorithm Recommendations</h5>
+                            <small class="text-muted">Using traditional collaborative filtering</small>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" id="manual-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="recommendation_type" value="manual">
+                                
+                                <div class="mb-3">
+                                    <label for="manual_target_user_id" class="form-label">Customer ID</label>
+                                    <input type="number" class="form-control" id="manual_target_user_id" name="target_user_id" 
+                                           value="{{ target_user_id|default:'17850' }}" required>
+                                    <small class="form-text text-muted">Enter the customer ID to get manual recommendations for</small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="manual_stock_codes" class="form-label">Stock Codes</label>
+                                    <input type="text" class="form-control" id="manual_stock_codes" name="stock_codes" 
+                                           value="{{ stock_codes|join:', '|default:'85123A, 71053, 84406B' }}" required>
+                                    <small class="form-text text-muted">Enter stock codes separated by commas</small>
+                                </div>
+                                
+                                <button type="submit" class="btn btn-success">📊 Get Manual Recommendations</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    {% if recommendations and recommendation_type == 'manual' %}
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📊 Manual Recommendations for Customer {{ target_user_id }}</h5>
+                            <small class="text-muted">Source: {{ recommendation_source|default:'Manual Algorithm' }}</small>
+                        </div>
+                        <div class="card-body">
+                            {% for rec in recommendations %}
+                            <div class="recommendation-card">
+                                <div>
+                                    <h6 class="mb-1">{{ rec.description }}</h6>
+                                    <p class="mb-1"><strong>Stock Code:</strong> {{ rec.stock_code }}</p>
+                                    <p class="mb-1"><strong>Price:</strong> ${{ rec.unit_price }}</p>
+                                    {% if rec.score %}
+                                    <p class="mb-1"><strong>Score:</strong> {{ rec.score|floatformat:3 }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="card">
+                        <div class="card-body text-center text-muted">
+                            <h5>📊 Manual Recommendations</h5>
+                            <p>Fill out the form to get algorithm-based product recommendations!</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if error and recommendation_type == 'manual' %}
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> {{ error }}
+                
+                {% if available_customers %}
+                <hr>
+                <strong>Available Customer IDs (sample):</strong>
+                <br>{{ available_customers|join:', ' }}
+                {% endif %}
+                
+                {% if sample_stocks %}
+                <hr>
+                <strong>Sample Stock Codes:</strong>
+                <br>{{ sample_stocks|join:', ' }}
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
+
+<script>
+// Synchronize form inputs between tabs
+document.addEventListener('DOMContentLoaded', function() {
+    // Get all input elements
+    const aiUserId = document.getElementById('ai_target_user_id');
+    const manualUserId = document.getElementById('manual_target_user_id');
+    const aiStockCodes = document.getElementById('ai_stock_codes');
+    const manualStockCodes = document.getElementById('manual_stock_codes');
+    
+    // Sync user ID inputs
+    aiUserId.addEventListener('input', function() {
+        manualUserId.value = this.value;
+    });
+    
+    manualUserId.addEventListener('input', function() {
+        aiUserId.value = this.value;
+    });
+    
+    // Sync stock codes inputs
+    aiStockCodes.addEventListener('input', function() {
+        manualStockCodes.value = this.value;
+    });
+    
+    manualStockCodes.addEventListener('input', function() {
+        aiStockCodes.value = this.value;
+    });
+    
+    // Handle tab switching based on recommendation type
+    var recommendationType = '{{ recommendation_type|default:"" }}';
+    if (recommendationType === 'manual') {
+        // Switch to manual tab if manual recommendations were requested
+        const manualTab = new bootstrap.Tab(document.getElementById('manual-tab'));
+        manualTab.show();
+    }
+});
+</script>
 {% endblock %}
