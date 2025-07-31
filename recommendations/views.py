@@ -29,7 +29,7 @@ def get_processor_and_data():
     if _processor is None:
         print("🔧 Initializing data processor...")
         _processor = DataProcessor()
-        df = _processor.load_dataset()
+        df = _processor.load_data_from_sqlite()
         if df is not None:
             _df_clean = _processor.clean_data(df)
             print(f"✅ Data loaded: {len(_df_clean)} rows")
@@ -90,7 +90,7 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
                 'stock_code': row['StockCode'],
                 'description': row['Description'] or 'No description',
                 'unit_price': round(float(row['UnitPrice']), 2),  # Round to 2 decimal places
-                'score': float(row['Quantity'])
+                # 'score': float(row['Quantity'])
             })
         
         print(f"✅ Generated {len(recommendations)} simple recommendations")
