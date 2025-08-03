@@ -1,7 +1,5 @@
 """
-CrewAI agents package.
+Agents module initialization.
 """
 
 from .crew_agents import RecommendationAgents
-
-__all__ = ["RecommendationAgents"]

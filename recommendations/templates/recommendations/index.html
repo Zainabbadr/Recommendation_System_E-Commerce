@@ -42,10 +42,17 @@
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <label for="ai_stock_codes" class="form-label">Stock Codes</label>
-                                    <input type="text" class="form-control" id="ai_stock_codes" name="stock_codes" 
-                                           value="{{ stock_codes|join:', '|default:'85123A, 71053, 84406B' }}" required>
-                                    <small class="form-text text-muted">Enter stock codes separated by commas</small>
+                                    <label for="ai_selected_products" class="form-label">Select Products</label>
+                                    <select multiple class="form-control" id="ai_selected_products" name="selected_products" 
+                                            size="8" required style="height: 200px;">
+                                        {% for stock_code, description, price in available_products %}
+                                            <option value="{{ stock_code }}" 
+                                                {% if stock_code in valid_stock_codes %}selected{% endif %}>
+                                                {{ description }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="form-text text-muted">Hold Ctrl (Cmd on Mac) to select multiple products</small>
                                 </div>
                                 
                                 <button type="submit" class="btn btn-primary">🚀 Get AI Recommendations</button>
@@ -62,6 +69,19 @@
                             <small class="text-muted">Source: {{ recommendation_source|default:'AI Algorithm' }}</small>
                         </div>
                         <div class="card-body">
+                            <!-- Show selected products -->
+                            {% if selected_products %}
+                            <div class="mb-3">
+                                <h6>📦 Based on selected products:</h6>
+                                <ul class="list-unstyled">
+                                    {% for product in selected_products %}
+                                    <li><small><strong>{{ product.stock_code }}:</strong> {{ product.description }}</small></li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <hr>
+                            {% endif %}
+                            
                             {% for rec in recommendations %}
                             <div class="recommendation-card">
                                 <div>
@@ -80,7 +100,7 @@
                     <div class="card">
                         <div class="card-body text-center text-muted">
                             <h5>🤖 AI Recommendations</h5>
-                            <p>Fill out the form to get AI-powered product recommendations!</p>
+                            <p>Select products and get AI-powered recommendations!</p>
                         </div>
                     </div>
                     {% endif %}
@@ -117,10 +137,17 @@
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <label for="manual_stock_codes" class="form-label">Stock Codes</label>
-                                    <input type="text" class="form-control" id="manual_stock_codes" name="stock_codes" 
-                                           value="{{ stock_codes|join:', '|default:'85123A, 71053, 84406B' }}" required>
-                                    <small class="form-text text-muted">Enter stock codes separated by commas</small>
+                                    <label for="manual_selected_products" class="form-label">Select Products</label>
+                                    <select multiple class="form-control" id="manual_selected_products" name="selected_products" 
+                                            size="8" required style="height: 200px;">
+                                        {% for stock_code, description, price in available_products %}
+                                            <option value="{{ stock_code }}" 
+                                                {% if stock_code in valid_stock_codes %}selected{% endif %}>
+                                                {{ description }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="form-text text-muted">Hold Ctrl (Cmd on Mac) to select multiple products</small>
                                 </div>
                                 
                                 <button type="submit" class="btn btn-success">📊 Get Manual Recommendations</button>
@@ -137,6 +164,19 @@
                             <small class="text-muted">Source: {{ recommendation_source|default:'Manual Algorithm' }}</small>
                         </div>
                         <div class="card-body">
+                            <!-- Show selected products -->
+                            {% if selected_products %}
+                            <div class="mb-3">
+                                <h6>📦 Based on selected products:</h6>
+                                <ul class="list-unstyled">
+                                    {% for product in selected_products %}
+                                    <li><small><strong>{{ product.stock_code }}:</strong> {{ product.description }}</small></li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <hr>
+                            {% endif %}
+                            
                             {% for rec in recommendations %}
                             <div class="recommendation-card">
                                 <div>
@@ -155,7 +195,7 @@
                     <div class="card">
                         <div class="card-body text-center text-muted">
                             <h5>📊 Manual Recommendations</h5>
-                            <p>Fill out the form to get algorithm-based product recommendations!</p>
+                            <p>Select products and get algorithm-based recommendations!</p>
                         </div>
                     </div>
                     {% endif %}
@@ -171,12 +211,6 @@
                 <strong>Available Customer IDs (sample):</strong>
                 <br>{{ available_customers|join:', ' }}
                 {% endif %}
-                
-                {% if sample_stocks %}
-                <hr>
-                <strong>Sample Stock Codes:</strong>
-                <br>{{ sample_stocks|join:', ' }}
-                {% endif %}
             </div>
             {% endif %}
         </div>
@@ -189,8 +223,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Get all input elements
     const aiUserId = document.getElementById('ai_target_user_id');
     const manualUserId = document.getElementById('manual_target_user_id');
-    const aiStockCodes = document.getElementById('ai_stock_codes');
-    const manualStockCodes = document.getElementById('manual_stock_codes');
+    const aiProducts = document.getElementById('ai_selected_products');
+    const manualProducts = document.getElementById('manual_selected_products');
     
     // Sync user ID inputs
     aiUserId.addEventListener('input', function() {
@@ -201,13 +235,25 @@ document.addEventListener('DOMContentLoaded', function() {
         aiUserId.value = this.value;
     });
     
-    // Sync stock codes inputs
-    aiStockCodes.addEventListener('input', function() {
-        manualStockCodes.value = this.value;
+    // Sync product selections
+    aiProducts.addEventListener('change', function() {
+        // Get selected options from AI tab
+        const selectedValues = Array.from(this.selectedOptions).map(option => option.value);
+        
+        // Clear manual tab selections
+        Array.from(manualProducts.options).forEach(option => {
+            option.selected = selectedValues.includes(option.value);
+        });
     });
     
-    manualStockCodes.addEventListener('input', function() {
-        aiStockCodes.value = this.value;
+    manualProducts.addEventListener('change', function() {
+        // Get selected options from Manual tab
+        const selectedValues = Array.from(this.selectedOptions).map(option => option.value);
+        
+        // Clear AI tab selections
+        Array.from(aiProducts.options).forEach(option => {
+            option.selected = selectedValues.includes(option.value);
+        });
     });
     
     // Handle tab switching based on recommendation type

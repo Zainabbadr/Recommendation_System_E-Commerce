@@ -16,6 +16,7 @@ except ImportError as e:
 
 from src.data.processor import DataProcessor
 from src.models.recommendations import weighted_hybrid_recommendations, CollaborativeFiltering
+from recommendations.models import Dim_Products  # Import Django model
 
 # Global variables to cache data
 _processor = None
@@ -48,6 +49,64 @@ def get_processor_and_data():
             _agents = None
     
     return _processor, _df_clean, _agents
+
+def get_products_for_dropdown():
+    """Get all products from database for dropdown selection with prices."""
+    try:
+        from django.db import connection
+        
+        # Use raw SQL to get products with average prices
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    dp.StockCode,
+                    dp.Description,
+                    AVG(ft.UnitPrice) as avg_price
+                FROM recommendations_dim_products dp
+                LEFT JOIN recommendations_fact_transactions ft ON dp.StockCode = ft.StockCode_id
+                WHERE dp.Description IS NOT NULL 
+                AND dp.Description != ''
+                GROUP BY dp.StockCode, dp.Description
+                HAVING AVG(ft.UnitPrice) IS NOT NULL
+                ORDER BY dp.Description
+            """)
+            
+            rows = cursor.fetchall()
+            
+            # Format for dropdown: [(stock_code, description_with_price, price), ...]
+            product_choices = []
+            for row in rows:
+                stock_code, description, avg_price = row
+                price = float(avg_price) if avg_price else 0.0
+                formatted_description = f"{description} ({stock_code}) - ${price:.2f}"
+                product_choices.append((stock_code, formatted_description, price))
+        
+        print(f"📦 Loaded {len(product_choices)} products for dropdown with prices")
+        return product_choices
+        
+    except Exception as e:
+        print(f"❌ Error loading products with prices: {e}")
+        # Fallback to products without prices
+        try:
+            products = Dim_Products.objects.exclude(
+                Description__isnull=True
+            ).exclude(
+                Description__exact=''
+            ).order_by('Description')
+            
+            # Format without prices
+            product_choices = [
+                (product.StockCode, f"{product.Description} ({product.StockCode})", 0.0)
+                for product in products
+            ]
+            
+            print(f"📦 Loaded {len(product_choices)} products for dropdown (without prices)")
+            return product_choices
+            
+        except Exception as fallback_error:
+            print(f"❌ Fallback error: {fallback_error}")
+            return []
+
 def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
     """Simple recommendation algorithm as fallback."""
     try:
@@ -89,7 +148,7 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
             recommendations.append({
                 'stock_code': row['StockCode'],
                 'description': row['Description'] or 'No description',
-                'unit_price': round(float(row['UnitPrice']), 2),  # Round to 2 decimal places
+                'unit_price': round(float(row['UnitPrice']), 2),
                 # 'score': float(row['Quantity'])
             })
         
@@ -102,30 +161,40 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
 
 def index(request):
     """Main page with dual-tab recommendation form."""
+    # Get products for dropdown (always needed for GET and POST)
+    available_products = get_products_for_dropdown()
+    
     if request.method == 'POST':
         # Get form data
         target_user_id = request.POST.get('target_user_id')
-        stock_codes_input = request.POST.get('stock_codes')
-        recommendation_type = request.POST.get('recommendation_type', 'ai')  # Default to AI
+        selected_stock_codes = request.POST.getlist('selected_products')  # Changed to getlist for multiple selection
+        recommendation_type = request.POST.get('recommendation_type', 'ai')
         top_n = 7  # Always 7 recommendations
-        
-        # Parse stock codes
-        stock_codes = [code.strip() for code in stock_codes_input.split(',') if code.strip()]
         
         try:
             target_user_id = int(target_user_id)
+            
+            # Validate that products were selected
+            if not selected_stock_codes:
+                return render(request, 'recommendations/index.html', {
+                    'error': 'Please select at least one product',
+                    'recommendation_type': recommendation_type,
+                    'available_products': available_products
+                })
             
             # Get data
             processor, df_clean, agents = get_processor_and_data()
             if df_clean is None:
                 return render(request, 'recommendations/index.html', {
                     'error': 'Failed to load data',
-                    'recommendation_type': recommendation_type
+                    'recommendation_type': recommendation_type,
+                    'available_products': available_products
                 })
             
             print(f"📊 DataFrame columns: {list(df_clean.columns)}")
             print(f"📊 DataFrame shape: {df_clean.shape}")
             print(f"📊 Sample CustomerIDs: {df_clean['CustomerID'].unique()[:10]}")
+            print(f"📦 Selected products: {selected_stock_codes}")
             
             # Validate customer exists
             if target_user_id not in df_clean['CustomerID'].unique():
@@ -133,20 +202,35 @@ def index(request):
                 return render(request, 'recommendations/index.html', {
                     'error': f'Customer {target_user_id} not found',
                     'available_customers': available_customers,
-                    'recommendation_type': recommendation_type
+                    'recommendation_type': recommendation_type,
+                    'available_products': available_products
                 })
             
-            # Validate stock codes
+            # Validate selected stock codes exist in data
             available_stocks = df_clean['StockCode'].unique()
-            valid_stock_codes = [code for code in stock_codes if code in available_stocks]
+            valid_stock_codes = [code for code in selected_stock_codes if code in available_stocks]
             
             if not valid_stock_codes:
-                sample_stocks = df_clean['StockCode'].unique()[:10].tolist()
                 return render(request, 'recommendations/index.html', {
-                    'error': f'None of the stock codes found: {stock_codes}. Please enter valid stock codes.',
-                    'sample_stocks': sample_stocks,
-                    'recommendation_type': recommendation_type
+                    'error': f'Selected products not found in transaction data',
+                    'recommendation_type': recommendation_type,
+                    'available_products': available_products
                 })
+            
+            # Get selected product names for display
+            selected_products_info = []
+            for stock_code in valid_stock_codes:
+                try:
+                    product = Dim_Products.objects.get(StockCode=stock_code)
+                    selected_products_info.append({
+                        'stock_code': stock_code,
+                        'description': product.Description
+                    })
+                except Dim_Products.DoesNotExist:
+                    selected_products_info.append({
+                        'stock_code': stock_code,
+                        'description': 'Unknown Product'
+                    })
             
             recommendations = []
             recommendation_source = ""
@@ -182,7 +266,7 @@ def index(request):
                                             'confidence': rec.get('Confidence', 0)
                                         })
                                     
-                                    recommendation_source = "AI Algorithm (CrewAI)"
+                                    recommendation_source = "AI Algorithm (CrewAI) - SQLite Data"
                         except (json.JSONDecodeError, AttributeError) as e:
                             print(f"Error parsing AI results: {e}")
                             raise Exception("Failed to parse AI recommendations")
@@ -226,7 +310,7 @@ def index(request):
                                     'stock_code': rec.get('Stock Code', ''),
                                     'description': rec.get('Description', ''),
                                     'unit_price': rec.get('Unit Price', 0),
-                                    'score': 1.0
+                                    # 'score': 1.0
                                 })
                         else:
                             print(f"📊 No recommendations found for {stock_code}")
@@ -236,7 +320,7 @@ def index(request):
                     # If weighted hybrid didn't work, use simple recommendation
                     if not all_recommendations:
                         print("📊 Weighted hybrid failed, trying simple recommendations...")
-                        all_recommendations = get_simple_recommendations(df_clean, target_user_id, stock_codes, top_n)
+                        all_recommendations = get_simple_recommendations(df_clean, target_user_id, valid_stock_codes, top_n)
                     
                     # Remove duplicates and limit to top_n
                     seen_stocks = set()
@@ -249,9 +333,9 @@ def index(request):
                     print(f"📊 Final recommendations count: {len(recommendations)}")
                     
                     if recommendation_type == 'ai' and error_message:
-                        recommendation_source = "Manual Algorithm (Fallback)"
+                        recommendation_source = "Manual Algorithm (Fallback) - SQLite Data"
                     else:
-                        recommendation_source = "Manual Algorithm (Hybrid + Simple)"
+                        recommendation_source = "Manual Algorithm (Hybrid + Simple) - SQLite Data"
                         
                 except Exception as e:
                     error_message = f"Manual recommendations failed: {str(e)}"
@@ -262,22 +346,28 @@ def index(request):
             return render(request, 'recommendations/index.html', {
                 'recommendations': recommendations,
                 'target_user_id': target_user_id,
-                'stock_codes': valid_stock_codes,
+                'selected_products': selected_products_info,
+                'valid_stock_codes': valid_stock_codes,
                 'recommendation_type': recommendation_type,
                 'recommendation_source': recommendation_source,
-                'error': error_message
+                'error': error_message,
+                'available_products': available_products
             })
             
         except ValueError:
             return render(request, 'recommendations/index.html', {
                 'error': 'Please enter a valid customer ID (number)',
-                'recommendation_type': recommendation_type
+                'recommendation_type': recommendation_type,
+                'available_products': available_products
             })
         except Exception as e:
             return render(request, 'recommendations/index.html', {
                 'error': f'Error processing request: {str(e)}',
-                'recommendation_type': recommendation_type
+                'recommendation_type': recommendation_type,
+                'available_products': available_products
             })
     
-    # GET request - show empty form
-    return render(request, 'recommendations/index.html')
+    # GET request - show empty form with product dropdown
+    return render(request, 'recommendations/index.html', {
+        'available_products': available_products
+    })
