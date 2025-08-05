@@ -352,7 +352,7 @@ class RecommendationAgents:
 
     def __init__(
         self,
-        groq_api_key="",
+        groq_api_key=None,
         gemini_api_key=None,
     ):
         """

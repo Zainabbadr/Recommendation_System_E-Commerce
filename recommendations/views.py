@@ -158,6 +158,80 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
     except Exception as e:
         print(f"❌ Simple recommendation error: {e}")
         return []
+    
+# Add this import at the top
+from src.chatbot.langgraph_chatbot import RecommendationChatbot
+import os
+
+# Global chatbot instance
+_chatbot = None
+
+def get_chatbot():
+    """Initialize chatbot if not already done."""
+    global _chatbot
+    
+    if _chatbot is None:
+        try:
+            # Load environment variables
+            from dotenv import load_dotenv
+            load_dotenv()
+            
+            print("🤖 Initializing chatbot...")
+            _chatbot = RecommendationChatbot()
+            print("✅ Chatbot initialized successfully")
+        except Exception as e:
+            print(f"❌ Failed to initialize chatbot: {e}")
+            _chatbot = None
+    
+    return _chatbot
+
+def chatbot_view(request):
+    """Handle chatbot API requests."""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            message = data.get('message', '')
+            user_id = data.get('user_id', 'default_user')
+            
+            if not message.strip():
+                return JsonResponse({
+                    'error': 'Message cannot be empty',
+                    'status': 'error'
+                }, status=400)
+            
+            # Get chatbot instance
+            chatbot = get_chatbot()
+            
+            if chatbot is None:
+                return JsonResponse({
+                    'response': 'Sorry, the AI chatbot is currently unavailable. Please try the manual recommendation tabs.',
+                    'status': 'fallback'
+                })
+            
+            # Get chatbot response
+            response = chatbot.chat(message, user_id)
+            
+            return JsonResponse({
+                'response': response,
+                'status': 'success'
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'error': 'Invalid JSON data',
+                'status': 'error'
+            }, status=400)
+        except Exception as e:
+            print(f"❌ Chatbot error: {e}")
+            return JsonResponse({
+                'response': 'I encountered an unexpected error. Please try again or use the manual recommendation options.',
+                'status': 'error'
+            })
+    
+    return JsonResponse({
+        'error': 'Only POST requests allowed',
+        'status': 'error'
+    }, status=405)
 
 def index(request):
     """Main page with dual-tab recommendation form."""
