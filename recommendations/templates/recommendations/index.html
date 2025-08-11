@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartShop - AI Recommendations Dashboard</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        /* Modern Navbar */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .navbar-brand {
+            color: #2c3e50 !important;
+            font-weight: 700;
+            font-size: 1.5rem;
+        }
+
+        /* Main Container */
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+            margin: 2rem;
+            padding: 2rem;
+        }
+
+        /* Modern Tabs */
+        .nav-tabs {
+            border: none;
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 0.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .nav-tabs .nav-link {
+            border: none;
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-weight: 600;
+            color: #6c757d;
+            transition: all 0.3s ease;
+            margin: 0 4px;
+        }
+
+        .nav-tabs .nav-link.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .nav-tabs .nav-link:hover {
+            color: #495057;
+            transform: translateY(-2px);
+        }
+
+        /* Cards */
+        .card {
+            border: none;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-bottom: 1px solid #dee2e6;
+            border-radius: 16px 16px 0 0 !important;
+            padding: 1.5rem;
+        }
+
+        /* Chat Interface */
+        #chat-container {
+            background: linear-gradient(135deg, #fafbfc, #f1f3f4);
+            border-radius: 12px;
+            height: 500px;
+            overflow-y: auto;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+        }
+
+        .message-bubble {
+            max-width: 80%;
+            word-wrap: break-word;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 18px;
+        }
+
+        .bot-message .message-bubble {
+            background: linear-gradient(135deg, #e3f2fd, #f3e5f5) !important;
+            border: 1px solid #e1f5fe;
+        }
+
+        .user-message .message-bubble {
+            background: linear-gradient(135deg, #667eea, #764ba2) !important;
+            color: white;
+        }
+
+        .avatar {
+            font-size: 24px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Buttons */
+        .btn {
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffd93d, #ff6b6b);
+            border: none;
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        /* Form Controls */
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 2px solid #e9ecef;
+            padding: 12px 16px;
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        /* Recommendation Cards */
+        .recommendation-card {
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #f8f9fa, #ffffff);
+            transition: all 0.3s ease;
+        }
+
+        .recommendation-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Alerts */
+        .alert {
+            border: none;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .alert-info {
+            background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+            color: #1565c0;
+        }
+
+        /* Loading Animation */
+        .typing-indicator {
+            display: none;
+        }
+
+        .typing-indicator.show {
+            display: block;
+        }
+
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        /* Interactive Elements */
+        .example-query {
+            cursor: pointer;
+            color: #667eea !important;
+            transition: all 0.3s ease;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+
+        .example-query:hover {
+            background: rgba(102, 126, 234, 0.1);
+            text-decoration: none !important;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .main-container {
+                margin: 1rem;
+                padding: 1rem;
+            }
+            
+            #chat-container {
+                height: 400px;
+            }
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .tab-content {
+            animation: slideIn 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <!-- Modern Navbar -->
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <span class="navbar-brand">🛒 SmartShop AI Dashboard</span>
+            <div class="d-flex align-items-center">
+                <span class="badge bg-success me-2">AI Online</span>
+                <span id="customerInfo" class="me-3 text-muted"></span>
+                <button class="btn btn-outline-secondary btn-sm me-2" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+                <i class="fas fa-user-circle fa-2x text-muted"></i>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="main-container">
+            <!-- Modern Tab Navigation -->
+            <ul class="nav nav-tabs" id="recommendationTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="chatbot-tab" data-bs-toggle="tab" data-bs-target="#chatbot-recommendations" 
+                            type="button" role="tab" aria-controls="chatbot-recommendations" aria-selected="true">
+                        🤖 AI Chatbot
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-recommendations" 
+                            type="button" role="tab" aria-controls="ai-recommendations" aria-selected="false">
+                        🚀 AI Recommendations
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="manual-tab" data-bs-toggle="tab" data-bs-target="#manual-recommendations" 
+                            type="button" role="tab" aria-controls="manual-recommendations" aria-selected="false">
+                        📊 Manual Fallback
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="recommendationTabContent">
+                
+                <!-- AI Chatbot Tab -->
+                <div class="tab-pane fade show active" id="chatbot-recommendations" role="tabpanel">
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>🤖 AI Recommendation Chatbot</h5>
+                                    <small class="text-muted">Ask me anything about customer recommendations, purchase history, or product insights!</small>
+                                </div>
+                                <div class="card-body p-0">
+                                    <!-- Chat Interface -->
+                                    <div id="chat-container">
+                                        <div id="chat-messages">
+                                            <!-- Welcome message -->
+                                            <div class="message bot-message mb-3">
+                                                <div class="d-flex">
+                                                    <div class="avatar me-3">🤖</div>
+                                                    <div class="message-content">
+                                                        <div class="message-bubble p-3">
+                                                            <strong>AI Assistant:</strong><br>
+                                                            👋 Hello! I'm your AI-powered recommendation assistant. I can help you with:
+                                                            <ul class="mt-2 mb-0">
+                                                                <li>Product recommendations for customers</li>
+                                                                <li>Customer purchase history</li>
+                                                                <li>Customer behavior analysis</li>
+                                                                <li>Product information and details</li>
+                                                            </ul>
+                                                            <br><strong>Try asking:</strong>
+                                                            <br>• "I need recommendations for customer 17850"
+                                                            <br>• "What's the segment of customer 12357?"
+                                                            <br>• "Show me last 3 purchases for customer 12603"
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Chat Input -->
+                                    <div class="p-4">
+                                        <div class="input-group mb-3">
+                                            <input type="text" id="chat-input" class="form-control" 
+                                                   placeholder="Ask me about recommendations, customers, or products..." 
+                                                   aria-label="Chat message">
+                                            <button class="btn btn-primary" type="button" id="send-button">
+                                                <i class="fas fa-paper-plane"></i> Send
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">
+                                            <strong>Examples:</strong> 
+                                            <span class="example-query">"Recommend products for customer 17850"</span> | 
+                                            <span class="example-query">"Last purchase for customer 12358"</span> | 
+                                            <span class="example-query">"Customer 12357 segment"</span>
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Recommendations Tab -->
+                <div class="tab-pane fade" id="ai-recommendations" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>🚀 AI-Powered Recommendations</h5>
+                                    <small class="text-muted">Advanced machine learning algorithms</small>
+                                </div>
+                                <div class="card-body">
+                                    <form id="ai-form">
+                                        <div class="mb-3">
+                                            <label for="ai_target_user_id" class="form-label">Customer ID</label>
+                                            <input type="number" class="form-control" id="ai_target_user_id" 
+                                                   value="17850" required>
+                                            <small class="form-text text-muted">Enter the customer ID to get AI recommendations for</small>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="ai_selected_products" class="form-label">Select Products</label>
+                                            <select multiple class="form-control" id="ai_selected_products" 
+                                                    size="8" required style="height: 200px;">
+                                                <option value="85123A">WHITE HANGING HEART T-LIGHT HOLDER</option>
+                                                <option value="71053">WHITE METAL LANTERN</option>
+                                                <option value="84406B">CREAM CUPID HEARTS COAT HANGER</option>
+                                                <option value="84029G">KNITTED UNION FLAG HOT WATER BOTTLE</option>
+                                                <option value="84029E">RED WOOLLY HOTTIE WHITE HEART</option>
+                                                <option value="22752">SET 7 BABUSHKA NESTING BOXES</option>
+                                                <option value="21730">GLASS STAR FROSTED T-LIGHT HOLDER</option>
+                                            </select>
+                                            <small class="form-text text-muted">Hold Ctrl (Cmd on Mac) to select multiple products</small>
+                                        </div>
+                                        
+                                        <button type="submit" class="btn btn-primary w-100">🚀 Get AI Recommendations</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body text-center">
+                                    <h5>🚀 AI Recommendations</h5>
+                                    <p class="text-muted">Select products and customer ID to get personalized recommendations</p>
+                                    <div id="ai-results" class="mt-3"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Manual Recommendations Tab -->
+                <div class="tab-pane fade" id="manual-recommendations" role="tabpanel">
+                    <div class="alert alert-info">
+                        <strong>ℹ️ Manual Fallback:</strong> This tab is available as a fallback when AI systems are unavailable.
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>📊 Manual Algorithm Recommendations</h5>
+                                    <small class="text-muted">Traditional collaborative filtering</small>
+                                </div>
+                                <div class="card-body">
+                                    <form id="manual-form">
+                                        <div class="mb-3">
+                                            <label for="manual_target_user_id" class="form-label">Customer ID</label>
+                                            <input type="number" class="form-control" id="manual_target_user_id" 
+                                                   value="17850" required>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label for="manual_selected_products" class="form-label">Select Products</label>
+                                            <select multiple class="form-control" id="manual_selected_products" 
+                                                    size="8" required style="height: 200px;">
+                                                <option value="85123A">WHITE HANGING HEART T-LIGHT HOLDER</option>
+                                                <option value="71053">WHITE METAL LANTERN</option>
+                                                <option value="84406B">CREAM CUPID HEARTS COAT HANGER</option>
+                                                <option value="84029G">KNITTED UNION FLAG HOT WATER BOTTLE</option>
+                                                <option value="84029E">RED WOOLLY HOTTIE WHITE HEART</option>
+                                                <option value="22752">SET 7 BABUSHKA NESTING BOXES</option>
+                                                <option value="21730">GLASS STAR FROSTED T-LIGHT HOLDER</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <button type="submit" class="btn btn-warning w-100">📊 Get Manual Recommendations</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body text-center">
+                                    <h5>📊 Manual Recommendations</h5>
+                                    <p class="text-muted">Emergency fallback option when AI systems are unavailable</p>
+                                    <div id="manual-results" class="mt-3"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Sample recommendation data
+        const sampleRecommendations = [
+            {
+                stock_code: "22423",
+                description: "REGENCY CAKESTAND 3 TIER",
+                unit_price: "12.75",
+                confidence: "94.5"
+            },
+            {
+                stock_code: "85099B",
+                description: "JUMBO BAG RED RETROSPOT",
+                unit_price: "1.65",
+                confidence: "89.2"
+            },
+            {
+                stock_code: "47566",
+                description: "PARTY BUNTING",
+                unit_price: "4.95",
+                confidence: "85.7"
+            }
+        ];
+
+        // Chat functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if user is logged in
+            const customerId = localStorage.getItem('customerId');
+            const loginTime = localStorage.getItem('loginTime');
+            
+            if (!customerId) {
+                // Redirect to login if not logged in
+                alert('Please log in first');
+                window.location.href = 'login.html'; // Change this to your login page filename
+                return;
+            }
+            
+            // Display customer info
+            const customerInfo = document.getElementById('customerInfo');
+            if (customerInfo) {
+                customerInfo.textContent = `Customer: ${customerId}`;
+            }
+            
+            // Update form defaults with logged-in customer ID
+            document.getElementById('ai_target_user_id').value = customerId;
+            document.getElementById('manual_target_user_id').value = customerId;
+            const chatInput = document.getElementById('chat-input');
+            const sendButton = document.getElementById('send-button');
+            const chatMessages = document.getElementById('chat-messages');
+            const chatContainer = document.getElementById('chat-container');
+            
+            // Example queries
+            document.querySelectorAll('.example-query').forEach(example => {
+                example.addEventListener('click', function() {
+                    chatInput.value = this.textContent;
+                    chatInput.focus();
+                });
+            });
+            
+            // Send message function
+            function sendMessage() {
+                const message = chatInput.value.trim();
+                if (!message) return;
+                
+                addMessageToChat(message, 'user');
+                chatInput.value = '';
+                showTypingIndicator();
+                
+                // Simulate AI response
+                setTimeout(() => {
+                    hideTypingIndicator();
+                    const response = generateAIResponse(message);
+                    addMessageToChat(response, 'bot');
+                }, 1500);
+            }
+            
+            // Generate AI response (simulation)
+            function generateAIResponse(message) {
+                const responses = {
+                    'customer 17850': '🎯 For customer 17850, I recommend:\n• REGENCY CAKESTAND 3 TIER ($12.75) - 94.5% match\n• JUMBO BAG RED RETROSPOT ($1.65) - 89.2% match\n• PARTY BUNTING ($4.95) - 85.7% match\n\nThis customer loves home decor items!',
+                    'segment': '📊 Customer 12357 belongs to the "Premium Home Decor" segment. They typically purchase high-quality decorative items and have a 85% repeat purchase rate.',
+                    'purchase': '🛒 Last 3 purchases for customer 12603:\n1. WHITE HANGING HEART T-LIGHT HOLDER - $2.55\n2. SET 7 BABUSHKA NESTING BOXES - $7.65\n3. GLASS STAR FROSTED T-LIGHT HOLDER - $4.25\n\nTotal: $14.45'
+                };
+                
+                for (let key in responses) {
+                    if (message.toLowerCase().includes(key)) {
+                        return responses[key];
+                    }
+                }
+                
+                return '🤖 I understand you\'re asking about recommendations! For better results, try asking about specific customer IDs, segments, or purchase history. Example: "Show me recommendations for customer 17850"';
+            }
+            
+            // Add message to chat
+            function addMessageToChat(message, sender) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${sender}-message mb-3`;
+                
+                if (sender === 'user') {
+                    messageDiv.innerHTML = `
+                        <div class="d-flex justify-content-end">
+                            <div class="message-content">
+                                <div class="message-bubble p-3">
+                                    <strong>You:</strong><br>${escapeHtml(message)}
+                                </div>
+                            </div>
+                            <div class="avatar ms-3">👤</div>
+                        </div>
+                    `;
+                } else {
+                    messageDiv.innerHTML = `
+                        <div class="d-flex">
+                            <div class="avatar me-3">🤖</div>
+                            <div class="message-content">
+                                <div class="message-bubble p-3">
+                                    <strong>AI Assistant:</strong><br>${formatBotMessage(message)}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                chatMessages.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            
+            // Show typing indicator
+            function showTypingIndicator() {
+                const typingDiv = document.createElement('div');
+                typingDiv.className = 'typing-indicator';
+                typingDiv.id = 'typing-indicator';
+                typingDiv.innerHTML = `
+                    <div class="d-flex mb-3">
+                        <div class="avatar me-3">🤖</div>
+                        <div class="message-content">
+                            <div class="message-bubble p-3">
+                                <em>AI is thinking...</em>
+                                <div class="spinner-border spinner-border-sm ms-2" role="status"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                chatMessages.appendChild(typingDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+            
+            // Hide typing indicator
+            function hideTypingIndicator() {
+                const typing = document.getElementById('typing-indicator');
+                if (typing) {
+                    typing.remove();
+                }
+            }
+            
+            // Format bot messages
+            function formatBotMessage(message) {
+                return escapeHtml(message)
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/📊|🤖|🔍|🎯|💰|📈|🛒|📦|🌍|📅|💡|❌|✅/g, '<span style="font-size: 1.1em;">$&</span>');
+            }
+            
+            // Escape HTML
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            // Event listeners
+            sendButton.addEventListener('click', sendMessage);
+            
+            chatInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Form submissions
+            document.getElementById('ai-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const customerId = document.getElementById('ai_target_user_id').value;
+                const results = document.getElementById('ai-results');
+                
+                results.innerHTML = `
+                    <div class="text-start">
+                        <h6>🚀 AI Recommendations for Customer ${customerId}</h6>
+                        ${sampleRecommendations.map(rec => `
+                            <div class="recommendation-card">
+                                <h6 class="mb-1">${rec.description}</h6>
+                                <p class="mb-1"><strong>Stock Code:</strong> ${rec.stock_code}</p>
+                                <p class="mb-1"><strong>Price:</strong> $${rec.unit_price}</p>
+                                <p class="mb-1"><strong>Confidence:</strong> ${rec.confidence}%</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            });
+            
+            document.getElementById('manual-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const customerId = document.getElementById('manual_target_user_id').value;
+                const results = document.getElementById('manual-results');
+                
+                results.innerHTML = `
+                    <div class="text-start">
+                        <h6>📊 Manual Recommendations for Customer ${customerId}</h6>
+                        ${sampleRecommendations.map(rec => `
+                            <div class="recommendation-card">
+                                <h6 class="mb-1">${rec.description}</h6>
+                                <p class="mb-1"><strong>Stock Code:</strong> ${rec.stock_code}</p>
+                                <p class="mb-1"><strong>Price:</strong> $${rec.unit_price}</p>
+                                <p class="mb-1"><strong>Score:</strong> ${(Math.random() * 0.1 + 0.85).toFixed(3)}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            });
+            
+            // Sync form inputs between tabs
+            const aiUserId = document.getElementById('ai_target_user_id');
+            const manualUserId = document.getElementById('manual_target_user_id');
+            
+            aiUserId.addEventListener('input', function() {
+                manualUserId.value = this.value;
+            });
+            
+            manualUserId.addEventListener('input', function() {
+                aiUserId.value = this.value;
+            });
+        });
+        
+        // Logout function
+        function logout() {
+            // Clear stored login data
+            localStorage.removeItem('customerId');
+            localStorage.removeItem('loginTime');
+            
+            // Redirect to login page
+            window.location.href = 'login.html'; // Change this to your login page filename
+        }
+    </script>
+</body>
+</html>

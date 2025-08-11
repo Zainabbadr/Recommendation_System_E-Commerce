@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmartShop - Intelligent Shopping Experience</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Animated background particles */
+    .bg-particles {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    .particle {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+      animation: float 6s ease-in-out infinite;
+    }
+
+    .particle:nth-child(1) {
+      width: 80px;
+      height: 80px;
+      left: 10%;
+      animation-delay: 0s;
+    }
+
+    .particle:nth-child(2) {
+      width: 120px;
+      height: 120px;
+      left: 80%;
+      animation-delay: 2s;
+    }
+
+    .particle:nth-child(3) {
+      width: 60px;
+      height: 60px;
+      left: 60%;
+      animation-delay: 4s;
+    }
+
+    @keyframes float {
+      0%, 100% {
+        transform: translateY(0) rotate(0deg);
+        opacity: 0.3;
+      }
+      50% {
+        transform: translateY(-20px) rotate(180deg);
+        opacity: 0.8;
+      }
+    }
+
+    .main-container {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(20px);
+      border-radius: 24px;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+      max-width: 900px;
+      width: 90%;
+    }
+
+    .features-panel {
+      flex: 1;
+      background: linear-gradient(135deg, #ff6b6b, #ffd93d);
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+    }
+
+    .features-panel h1 {
+      color: white;
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 20px;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 25px;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 20px;
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .feature-item:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .feature-icon {
+      width: 50px;
+      height: 50px;
+      margin-right: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    .feature-text {
+      flex: 1;
+    }
+
+    .feature-text h3 {
+      color: white;
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    .feature-text p {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .login-panel {
+      flex: 0 0 400px;
+      padding: 50px 40px;
+      background: white;
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .login-header h2 {
+      color: #2c3e50;
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .login-header p {
+      color: #7f8c8d;
+      font-size: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 25px;
+    }
+
+    .form-group label {
+      display: block;
+      color: #2c3e50;
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+    }
+
+    .input-container {
+      position: relative;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 16px 20px;
+      border: 2px solid #e1e8ed;
+      border-radius: 12px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      background: #f8f9fa;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .login-button {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .login-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+    }
+
+    .login-button:active {
+      transform: translateY(0);
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .main-container {
+        flex-direction: column;
+        max-width: 400px;
+      }
+
+      .features-panel {
+        order: 2;
+        padding: 30px;
+      }
+
+      .features-panel h1 {
+        font-size: 2rem;
+      }
+
+      .login-panel {
+        flex: none;
+        padding: 40px 30px;
+      }
+    }
+
+    /* Icon animations */
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.1);
+      }
+    }
+
+    .feature-icon.pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-5px);
+      }
+    }
+
+    .feature-icon.bounce {
+      animation: bounce 1.5s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-particles">
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+  </div>
+
+  <div class="main-container">
+    <div class="features-panel">
+      <h1>SmartShop</h1>
+      
+      <div class="feature-item">
+        <div class="feature-icon pulse">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 1 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5z" fill="#ff6b6b"/>
+            <circle cx="18" cy="6" r="3" fill="#ffd93d"/>
+            <path d="M18 4.5v3M16.5 6h3" stroke="#ff6b6b" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="feature-text">
+          <h3>AI Recommendations</h3>
+          <p>Personalized product suggestions powered by machine learning algorithms</p>
+        </div>
+      </div>
+
+      <div class="feature-item">
+        <div class="feature-icon bounce">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Robot head -->
+            <rect x="7" y="6" width="10" height="8" rx="2" fill="#4CAF50" stroke="#2E7D32" stroke-width="1"/>
+            <!-- Robot antenna -->
+            <line x1="12" y1="6" x2="12" y2="4" stroke="#2E7D32" stroke-width="1.5"/>
+            <circle cx="12" cy="4" r="1" fill="#ff6b6b"/>
+            <!-- Robot eyes -->
+            <circle cx="10" cy="9" r="1" fill="white"/>
+            <circle cx="14" cy="9" r="1" fill="white"/>
+            <circle cx="10" cy="9" r="0.5" fill="#2E7D32"/>
+            <circle cx="14" cy="9" r="0.5" fill="#2E7D32"/>
+            <!-- Robot mouth -->
+            <rect x="11" y="11" width="2" height="1" rx="0.5" fill="white"/>
+            <!-- Robot body -->
+            <rect x="8" y="14" width="8" height="6" rx="1" fill="#64B5F6" stroke="#1976D2" stroke-width="1"/>
+            <!-- Robot arms -->
+            <rect x="5" y="15" width="3" height="1.5" rx="0.5" fill="#64B5F6" stroke="#1976D2" stroke-width="0.5"/>
+            <rect x="16" y="15" width="3" height="1.5" rx="0.5" fill="#64B5F6" stroke="#1976D2" stroke-width="0.5"/>
+            <!-- Robot hands -->
+            <circle cx="5" cy="15.75" r="0.8" fill="#FFB74D" stroke="#F57C00" stroke-width="0.5"/>
+            <circle cx="19" cy="15.75" r="0.8" fill="#FFB74D" stroke="#F57C00" stroke-width="0.5"/>
+            <!-- Robot control panel -->
+            <circle cx="12" cy="17" r="0.8" fill="#ff6b6b"/>
+            <rect x="10" y="18.5" width="1" height="0.8" rx="0.2" fill="#ffd93d"/>
+            <rect x="13" y="18.5" width="1" height="0.8" rx="0.2" fill="#ffd93d"/>
+          </svg>
+        </div>
+        <div class="feature-text">
+          <h3>Smart Chatbot</h3>
+          <p>Track orders, view history, and get personalized shopping assistance 24/7</p>
+        </div>
+      </div>
+
+      <div class="feature-item">
+        <div class="feature-icon">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17 18C15.89 18 15 18.89 15 20C15 21.11 15.89 22 17 22C18.11 22 19 21.11 19 20C19 18.89 18.11 18 17 18ZM1 2V4H3L6.6 11.59L5.24 14.04C5.09 14.32 5 14.65 5 15C5 16.11 5.89 17 7 17H19V15H7.42C7.28 15 7.17 14.89 7.17 14.75L7.2 14.63L8.1 13H15.55C16.3 13 16.96 12.58 17.3 11.97L20.88 5H5.21L4.27 3H1ZM7 18C5.89 18 5 18.89 5 20C5 21.11 5.89 22 7 22C8.11 22 9 21.11 9 20C9 18.89 8.11 18 7 18Z" fill="#764ba2"/>
+          </svg>
+        </div>
+        <div class="feature-text">
+          <h3>Seamless Shopping</h3>
+          <p>Intuitive interface designed for the best e-commerce experience</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-panel">
+      <div class="login-header">
+        <h2>Welcome Back</h2>
+        <p>Enter your Customer ID to continue</p>
+      </div>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="customerId">Customer ID</label>
+          <div class="input-container">
+            <input type="text" id="customerId" name="customerId" placeholder="Enter your unique ID" required>
+          </div>
+        </div>
+        
+        <button type="submit" class="login-button" id="loginButton">
+          Login to SmartShop
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // Handle login form submission
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+      e.preventDefault(); // Prevent default form submission
+      
+      const customerId = document.getElementById('customerId').value.trim();
+      const loginButton = document.getElementById('loginButton');
+      
+      // Validate customer ID
+      if (!customerId) {
+        alert('Please enter your Customer ID');
+        return;
+      }
+      
+      // Show loading state
+      loginButton.innerHTML = 'Logging in...';
+      loginButton.disabled = true;
+      
+      // Simulate login process (you can add real validation here)
+      setTimeout(() => {
+        // Store customer ID in localStorage for the index page
+        localStorage.setItem('customerId', customerId);
+        localStorage.setItem('loginTime', new Date().toISOString());
+        
+        // Redirect to index page
+        window.location.href = 'index.html'; // Change this to your index page filename
+        
+      }, 1000); // 1 second delay to show loading
+    });
+    
+    // Add some interactivity to the feature cards
+    document.addEventListener('DOMContentLoaded', function() {
+      const featureItems = document.querySelectorAll('.feature-item');
+      
+      featureItems.forEach(item => {
+        item.addEventListener('mouseenter', function() {
+          this.style.transform = 'translateY(-8px) scale(1.02)';
+        });
+        
+        item.addEventListener('mouseleave', function() {
+          this.style.transform = 'translateY(-5px) scale(1)';
+        });
+      });
+    });
+  </script>
+
+</body>
+</html>
