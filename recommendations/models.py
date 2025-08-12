@@ -25,7 +25,7 @@ class Dim_Customers(models.Model):
 
 # 3. Fact Table: Transactions
 class Fact_Transactions(models.Model):
-    InvoiceNo = models.CharField(max_length=50, primary_key=True)
+    InvoiceNo = models.CharField(max_length=50)
     CustomerID = models.ForeignKey(Dim_Customers, on_delete=models.CASCADE)
     StockCode = models.ForeignKey(Dim_Products, on_delete=models.CASCADE)
     Quantity = models.IntegerField()

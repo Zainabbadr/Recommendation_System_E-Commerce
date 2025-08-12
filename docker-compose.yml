@@ -1,0 +1,25 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - collected_static:/app/collected_static  # Match new STATIC_ROOT
+      - media_volume:/app/media
+      - ./db:/app/db
+      - ./src:/app/src
+      - ./recommendations:/app/recommendations
+      - ./recommendation_frontend:/app/recommendation_frontend 
+    environment:
+      - DEBUG=1
+      - DJANGO_SETTINGS_MODULE=recommendation_frontend.settings
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    restart: unless-stopped
+    env_file:
+      - .env
+
+volumes:
+  collected_static:
+  media_volume:

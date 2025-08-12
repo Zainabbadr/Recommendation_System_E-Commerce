@@ -7,25 +7,23 @@ from django.http import JsonResponse
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-try:
-    from src.agents.crew_agents import RecommendationAgents
-    CREWAI_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ CrewAI not available: {e}")
-    CREWAI_AVAILABLE = False
-
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from src.data.processor import DataProcessor
 from src.models.recommendations import weighted_hybrid_recommendations, CollaborativeFiltering
 from recommendations.models import Dim_Products  # Import Django model
+from src.chatbot.langgraph_chatbot import RecommendationChatbot
+import os
+# from django.http import StreamingHttpResponse
 
 # Global variables to cache data
 _processor = None
 _df_clean = None
-_agents = None
+_chatbot = None
 
 def get_processor_and_data():
     """Initialize processor and load data if not already done."""
-    global _processor, _df_clean, _agents
+    global _processor, _df_clean
     
     if _processor is None:
         print("🔧 Initializing data processor...")
@@ -36,19 +34,28 @@ def get_processor_and_data():
             print(f"✅ Data loaded: {len(_df_clean)} rows")
         else:
             print("❌ Failed to load dataset")
-            return None, None, None
+            return None, None
     
-    if _agents is None and CREWAI_AVAILABLE:
-        print("🤖 Initializing AI agents...")
+    return _processor, _df_clean
+
+def get_chatbot():
+    """Initialize chatbot if not already done."""
+    global _chatbot
+    
+    if _chatbot is None:
         try:
-            _agents = RecommendationAgents()
-            if _df_clean is not None:
-                _agents.set_dataframe(_df_clean)
+            # Load environment variables
+            from dotenv import load_dotenv
+            load_dotenv()
+            
+            print("🤖 Initializing chatbot...")
+            _chatbot = RecommendationChatbot()
+            print("✅ Chatbot initialized successfully")
         except Exception as e:
-            print(f"⚠️ Failed to initialize AI agents: {e}")
-            _agents = None
+            print(f"❌ Failed to initialize chatbot: {e}")
+            _chatbot = None
     
-    return _processor, _df_clean, _agents
+    return _chatbot
 
 def get_products_for_dropdown():
     """Get all products from database for dropdown selection with prices."""
@@ -149,7 +156,6 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
                 'stock_code': row['StockCode'],
                 'description': row['Description'] or 'No description',
                 'unit_price': round(float(row['UnitPrice']), 2),
-                # 'score': float(row['Quantity'])
             })
         
         print(f"✅ Generated {len(recommendations)} simple recommendations")
@@ -158,80 +164,65 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
     except Exception as e:
         print(f"❌ Simple recommendation error: {e}")
         return []
-    
-# Add this import at the top
-from src.chatbot.langgraph_chatbot import RecommendationChatbot
-import os
 
-# Global chatbot instance
-_chatbot = None
-
-def get_chatbot():
-    """Initialize chatbot if not already done."""
-    global _chatbot
-    
-    if _chatbot is None:
-        try:
-            # Load environment variables
-            from dotenv import load_dotenv
-            load_dotenv()
-            
-            print("🤖 Initializing chatbot...")
-            _chatbot = RecommendationChatbot()
-            print("✅ Chatbot initialized successfully")
-        except Exception as e:
-            print(f"❌ Failed to initialize chatbot: {e}")
-            _chatbot = None
-    
-    return _chatbot
-
+@csrf_exempt
+@require_http_methods(["POST"])
 def chatbot_view(request):
     """Handle chatbot API requests."""
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            message = data.get('message', '')
-            user_id = data.get('user_id', 'default_user')
-            
-            if not message.strip():
-                return JsonResponse({
-                    'error': 'Message cannot be empty',
-                    'status': 'error'
-                }, status=400)
-            
-            # Get chatbot instance
-            chatbot = get_chatbot()
-            
-            if chatbot is None:
-                return JsonResponse({
-                    'response': 'Sorry, the AI chatbot is currently unavailable. Please try the manual recommendation tabs.',
-                    'status': 'fallback'
-                })
-            
-            # Get chatbot response
-            response = chatbot.chat(message, user_id)
-            
+    try:
+        data = json.loads(request.body)
+        message = data.get('message', '')
+        user_id = data.get('user_id', 'default_user')
+        
+        if not message.strip():
             return JsonResponse({
-                'response': response,
-                'status': 'success'
-            })
-            
-        except json.JSONDecodeError:
-            return JsonResponse({
-                'error': 'Invalid JSON data',
+                'error': 'Message cannot be empty',
                 'status': 'error'
             }, status=400)
-        except Exception as e:
-            print(f"❌ Chatbot error: {e}")
+        
+        # Get chatbot instance
+        chatbot = get_chatbot()
+        
+        if chatbot is None:
             return JsonResponse({
-                'response': 'I encountered an unexpected error. Please try again or use the manual recommendation options.',
-                'status': 'error'
+                'response': 'Sorry, the AI chatbot is currently unavailable. Please try the AI Recommendations tab.',
+                'status': 'fallback'
             })
-    
-    return JsonResponse({
-        'error': 'Only POST requests allowed',
-        'status': 'error'
-    }, status=405)
+        
+        # Get chatbot response
+        response = chatbot.chat(message, user_id)
+        
+        return JsonResponse({
+            'response': response,
+            'status': 'success'
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'error': 'Invalid JSON data',
+            'status': 'error'
+        }, status=400)
+    except Exception as e:
+        print(f"❌ Chatbot error: {e}")
+        return JsonResponse({
+            'response': 'I encountered an unexpected error. Please try again or use the AI Recommendations tab.',
+            'status': 'error'
+        })
+
+def health_check(request):
+    """Health check endpoint."""
+    try:
+        chatbot = get_chatbot()
+        return JsonResponse({
+            'status': 'healthy',
+            'service': 'django',
+            'chatbot_ready': chatbot is not None
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': str(e)
+        })
 
 def index(request):
     """Main page with dual-tab recommendation form."""
@@ -241,8 +232,7 @@ def index(request):
     if request.method == 'POST':
         # Get form data
         target_user_id = request.POST.get('target_user_id')
-        selected_stock_codes = request.POST.getlist('selected_products')  # Changed to getlist for multiple selection
-        recommendation_type = request.POST.get('recommendation_type', 'ai')
+        selected_stock_codes = request.POST.getlist('selected_products')
         top_n = 7  # Always 7 recommendations
         
         try:
@@ -252,16 +242,14 @@ def index(request):
             if not selected_stock_codes:
                 return render(request, 'recommendations/index.html', {
                     'error': 'Please select at least one product',
-                    'recommendation_type': recommendation_type,
                     'available_products': available_products
                 })
             
             # Get data
-            processor, df_clean, agents = get_processor_and_data()
+            processor, df_clean = get_processor_and_data()
             if df_clean is None:
                 return render(request, 'recommendations/index.html', {
                     'error': 'Failed to load data',
-                    'recommendation_type': recommendation_type,
                     'available_products': available_products
                 })
             
@@ -276,7 +264,6 @@ def index(request):
                 return render(request, 'recommendations/index.html', {
                     'error': f'Customer {target_user_id} not found',
                     'available_customers': available_customers,
-                    'recommendation_type': recommendation_type,
                     'available_products': available_products
                 })
             
@@ -287,7 +274,6 @@ def index(request):
             if not valid_stock_codes:
                 return render(request, 'recommendations/index.html', {
                     'error': f'Selected products not found in transaction data',
-                    'recommendation_type': recommendation_type,
                     'available_products': available_products
                 })
             
@@ -310,64 +296,61 @@ def index(request):
             recommendation_source = ""
             error_message = None
             
-            if recommendation_type == 'ai' and CREWAI_AVAILABLE and agents is not None:
-                # Try AI recommendations first
-                try:
-                    print(f"🤖 Getting AI recommendations for customer {target_user_id}...")
-                    results = agents.run_recommendations(
-                        target_user_id=target_user_id,
-                        stock_codes=valid_stock_codes,
-                        top_n=top_n
-                    )
-                    
-                    # Parse AI results
-                    if hasattr(results, 'raw') and results.raw:
-                        try:
-                            result_text = results.raw
-                            if isinstance(result_text, str):
-                                start_idx = result_text.find('{')
-                                end_idx = result_text.rfind('}') + 1
-                                if start_idx != -1 and end_idx != -1:
-                                    json_str = result_text[start_idx:end_idx]
-                                    parsed_results = json.loads(json_str)
-                                    raw_recommendations = parsed_results.get('Top Recommendations', [])
-                                    
-                                    for rec in raw_recommendations:
-                                        recommendations.append({
-                                            'stock_code': rec.get('Stock Code', ''),
-                                            'description': rec.get('Description', ''),
-                                            'unit_price': rec.get('Unit Price', 0),
-                                            'confidence': rec.get('Confidence', 0)
-                                        })
-                                    
-                                    recommendation_source = "AI Algorithm (CrewAI) - SQLite Data"
-                        except (json.JSONDecodeError, AttributeError) as e:
-                            print(f"Error parsing AI results: {e}")
-                            raise Exception("Failed to parse AI recommendations")
-                
-                except Exception as e:
-                    print(f"⚠️ AI recommendations failed: {e}")
-                    error_message = f"AI system unavailable: {str(e)}"
-                    # Fall back to manual recommendations
-                    recommendation_type = 'manual'
+            # AI Recommendations using LangGraph with Manual Fallback
+            print(f"🚀 Getting LangGraph AI recommendations for customer {target_user_id}...")
             
-            # Use manual recommendations if AI failed or was requested
-            if not recommendations or recommendation_type == 'manual':
-                print(f"📊 Getting manual recommendations for customer {target_user_id}...")
-                print(f"📊 Valid stock codes: {valid_stock_codes}")
+            try:
+                # Try LangGraph first
+                chatbot = get_chatbot()
                 
+                if chatbot is None:
+                    raise Exception("LangGraph chatbot not available")
+                
+                # Use LangGraph recommendation pipeline directly
+                print(f"📊 Running LangGraph collaborative filtering...")
+                collaborative_results = chatbot._collaborative_filtering(target_user_id, valid_stock_codes, top_n=10)
+                
+                print(f"📊 Running LangGraph content-based filtering...")
+                content_based_results = chatbot._content_based_filtering(target_user_id, valid_stock_codes, recommendations_per_stock=3)
+                
+                print(f"📊 Running LangGraph reranking...")
+                final_recommendations = chatbot._rerank_recommendations(collaborative_results, content_based_results, top_n=7)
+                
+                # Convert to expected format
+                if final_recommendations:
+                    for rec in final_recommendations:
+                        recommendations.append({
+                            'stock_code': rec.get('Stock Code', ''),
+                            'description': rec.get('Description', ''),
+                            'unit_price': rec.get('Unit Price', 0),
+                            'source': rec.get('Source', 'LangGraph AI'),
+                            'popularity': rec.get('Popularity', 0)
+                        })
+                    
+                    recommendation_source = "🚀 LangGraph AI Pipeline (Collaborative + Content-Based + Reranking)"
+                    print(f"✅ LangGraph generated {len(recommendations)} recommendations")
+                else:
+                    raise Exception("LangGraph returned no recommendations")
+                    
+            except Exception as e:
+                print(f"⚠️ LangGraph AI failed: {e}. Falling back to manual algorithms...")
+                error_message = f"AI temporarily unavailable, using backup algorithms"
+                
+                # **AUTOMATIC FALLBACK TO MANUAL (HIDDEN FROM USER)**
                 try:
-                    # First try the weighted hybrid approach
+                    print(f"📊 Getting manual fallback recommendations for customer {target_user_id}...")
+                    
+                    # Use manual algorithms
                     all_recommendations = []
                     
                     for stock_code in valid_stock_codes:
                         print(f"📊 Processing stock code: {stock_code}")
                         
-                        # Check if stock code exists in data
                         if stock_code not in df_clean['StockCode'].values:
                             print(f"⚠️ Stock code {stock_code} not found in data")
                             continue
                             
+                        # Try weighted hybrid approach
                         hybrid_result = weighted_hybrid_recommendations(
                             input_stock_code=stock_code,
                             target_user_id=target_user_id,
@@ -375,26 +358,28 @@ def index(request):
                             top_n=3
                         )
                         
-                        print(f"📊 Hybrid result for {stock_code}: {hybrid_result}")
-                        
                         if 'Top Recommendations' in hybrid_result and hybrid_result['Top Recommendations']:
-                            print(f"📊 Found {len(hybrid_result['Top Recommendations'])} recommendations for {stock_code}")
                             for rec in hybrid_result['Top Recommendations']:
                                 all_recommendations.append({
                                     'stock_code': rec.get('Stock Code', ''),
                                     'description': rec.get('Description', ''),
                                     'unit_price': rec.get('Unit Price', 0),
-                                    # 'score': 1.0
+                                    'source': 'Manual Fallback',
+                                    'popularity': 0
                                 })
-                        else:
-                            print(f"📊 No recommendations found for {stock_code}")
-                    
-                    print(f"📊 Total hybrid recommendations: {len(all_recommendations)}")
                     
                     # If weighted hybrid didn't work, use simple recommendation
                     if not all_recommendations:
                         print("📊 Weighted hybrid failed, trying simple recommendations...")
-                        all_recommendations = get_simple_recommendations(df_clean, target_user_id, valid_stock_codes, top_n)
+                        simple_recs = get_simple_recommendations(df_clean, target_user_id, valid_stock_codes, top_n)
+                        for rec in simple_recs:
+                            all_recommendations.append({
+                                'stock_code': rec['stock_code'],
+                                'description': rec['description'],
+                                'unit_price': rec['unit_price'],
+                                'source': 'Simple Fallback',
+                                'popularity': 0
+                            })
                     
                     # Remove duplicates and limit to top_n
                     seen_stocks = set()
@@ -402,27 +387,20 @@ def index(request):
                         if rec['stock_code'] not in seen_stocks and len(recommendations) < top_n:
                             recommendations.append(rec)
                             seen_stocks.add(rec['stock_code'])
-                            print(f"📊 Added recommendation: {rec['stock_code']} - {rec['description']}")
                     
-                    print(f"📊 Final recommendations count: {len(recommendations)}")
+                    recommendation_source = "🔄 Manual Algorithms (Automatic Fallback) - Hybrid + Simple"
+                    print(f"✅ Manual fallback generated {len(recommendations)} recommendations")
                     
-                    if recommendation_type == 'ai' and error_message:
-                        recommendation_source = "Manual Algorithm (Fallback) - SQLite Data"
-                    else:
-                        recommendation_source = "Manual Algorithm (Hybrid + Simple) - SQLite Data"
-                        
-                except Exception as e:
-                    error_message = f"Manual recommendations failed: {str(e)}"
-                    print(f"❌ Manual recommendations error: {e}")
-                    import traceback
-                    print(f"❌ Full traceback: {traceback.format_exc()}")
+                except Exception as fallback_error:
+                    print(f"❌ Manual fallback also failed: {fallback_error}")
+                    error_message = f"Both AI and manual systems failed: {str(fallback_error)}"
+                    recommendation_source = "❌ System Error"
             
             return render(request, 'recommendations/index.html', {
                 'recommendations': recommendations,
                 'target_user_id': target_user_id,
                 'selected_products': selected_products_info,
                 'valid_stock_codes': valid_stock_codes,
-                'recommendation_type': recommendation_type,
                 'recommendation_source': recommendation_source,
                 'error': error_message,
                 'available_products': available_products
@@ -431,13 +409,11 @@ def index(request):
         except ValueError:
             return render(request, 'recommendations/index.html', {
                 'error': 'Please enter a valid customer ID (number)',
-                'recommendation_type': recommendation_type,
                 'available_products': available_products
             })
         except Exception as e:
             return render(request, 'recommendations/index.html', {
                 'error': f'Error processing request: {str(e)}',
-                'recommendation_type': recommendation_type,
                 'available_products': available_products
             })
     

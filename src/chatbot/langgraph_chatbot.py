@@ -1,7 +1,7 @@
 # Updated src/chatbot/langgraph_chatbot.py
 
 import json
-import logging
+# import logging
 import os
 import re
 import sqlite3
@@ -13,11 +13,13 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_groq import ChatGroq
 import operator
 import pandas as pd
-
+from collections import defaultdict
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 # Import your existing CrewAI agents
-from src.agents.crew_agents import RecommendationAgents
+# from src.agents.crew_agents import RecommendationAgents
 from src.data.processor import DataProcessor
-
+_chatbot_instance = None 
 # Define the conversation state
 # Line 21-29: Update ConversationState
 class ConversationState(TypedDict):
@@ -28,9 +30,67 @@ class ConversationState(TypedDict):
     conversation_stage: str
     user_preferences: Dict[str, Any]
     extracted_info: Dict[str, Any]
-    conversation_history: List[Dict[str, Any]]  # NEW: Add conversation history
+    # conversation_history: List[Dict[str, Any]]  # NEW: Add conversation history
 
 class RecommendationChatbot:
+
+    # Get conversation history automatically
+    def _extract_context_from_messages(self, state: ConversationState) -> Dict[str, Any]:
+        """Extract context from built-in message history."""
+        context = {
+            "mentioned_customer_ids": [],
+            "last_customer_id": None,
+            "mentioned_products": [],
+            "mentioned_stock_codes": [],
+            "last_stock_code": None,
+            "query_types": []
+        }
+        
+        # Get ALL messages from persistent state
+        # Get RECENT messages for context (not all 38k messages!)
+        all_messages = state["messages"]
+        recent_messages = all_messages[-20:]  # Last 20 messages for context
+        print(f"🔍 Context extraction: Analyzing {len(recent_messages)} recent messages from {len(all_messages)} total")
+        for msg in recent_messages:
+            if isinstance(msg, HumanMessage):
+                # Extract customer IDs (5+ digits)
+                customer_id_matches = re.findall(r'\b(\d{5,})\b', msg.content)
+                for match in customer_id_matches:
+                    customer_id = int(match)
+                    if customer_id not in context["mentioned_customer_ids"]:
+                        context["mentioned_customer_ids"].append(customer_id)
+                        context["last_customer_id"] = customer_id
+                
+                # Extract stock codes (better pattern - actual stock code format)
+                stock_code_matches = re.findall(r'\b([0-9]{4,6}[A-Z]?|[A-Z]{1,3}[0-9]{3,6})\b', msg.content.upper())
+                for stock_code in stock_code_matches:
+                    if stock_code not in context["mentioned_stock_codes"]:
+                        context["mentioned_stock_codes"].append(stock_code)
+                        context["last_stock_code"] = stock_code
+                
+                # Extract quoted product names only
+                product_matches = re.findall(r'"([^"]{5,})"', msg.content)
+                for product in product_matches:
+                    clean_product = product.strip()
+                    if clean_product not in context["mentioned_products"]:
+                        context["mentioned_products"].append(clean_product)
+                            
+            elif isinstance(msg, AIMessage):
+                # Skip greeting messages
+                if any(phrase in msg.content.lower() for phrase in [
+                    "hello", "i'm your ai", "just tell me", "for example"
+                ]):
+                    continue
+                    
+                # Extract customer IDs from actual AI responses
+                customer_id_matches = re.findall(r'\bcustomer\s+(\d{5,})\b', msg.content, re.IGNORECASE)
+                for match in customer_id_matches:
+                    customer_id = int(match)
+                    if customer_id not in context["mentioned_customer_ids"]:
+                        context["mentioned_customer_ids"].append(customer_id)
+                        context["last_customer_id"] = customer_id
+        
+        return context
     """LangGraph-based chatbot that integrates with CrewAI recommendation agents."""
     
     def __init__(self, groq_api_key: str = None):
@@ -51,8 +111,8 @@ class RecommendationChatbot:
         )
         
         # Initialize CrewAI agents with the same API key
-        self.crew_agents = RecommendationAgents(groq_api_key=api_key)
-        
+        # self.crew_agents = RecommendationAgents(groq_api_key=api_key)
+        self._init_recommendation_tools()
         # Initialize data processor
         print("🔧 Loading data from SQLite database...")
         self.data_processor = DataProcessor()
@@ -67,14 +127,327 @@ class RecommendationChatbot:
         
         # Create the conversation graph (after memory is initialized)
         self.graph = self._create_graph()
+
+    def _init_recommendation_tools(self):
+        """Initialize collaborative filtering and content-based recommendation tools."""
+        self.vectorizer = None
+        self.tfidf_matrix = None
         
+    def _prepare_content_vectors(self):
+        """Prepare TF-IDF vectors for content-based filtering."""
+        if self.df_data is not None and self.vectorizer is None:
+            self.vectorizer = TfidfVectorizer(stop_words="english")
+            self.tfidf_matrix = self.vectorizer.fit_transform(self.df_data["Description"])
+            print("📊 TF-IDF vectors prepared for content-based filtering")
+
+    def _collaborative_filtering(self, target_user_id: int, stock_codes: List[str], top_n: int = 10) -> Dict[str, Any]:
+        """Generate recommendations using collaborative filtering."""
+        try:
+            if self.df_data is None:
+                return {"status": "error", "message": "Data not available", "recommendations": []}
+
+            # Check if user exists
+            if target_user_id not in self.df_data["CustomerID"].unique():
+                return {"status": "error", "message": f"Customer {target_user_id} not found", "recommendations": []}
+
+            # Create user-item matrix
+            user_item_matrix = self.df_data.pivot_table(
+                index="CustomerID",
+                columns="StockCode", 
+                values="Quantity",
+                aggfunc="mean"
+            ).fillna(0)
+
+            # Get user's district for neighborhood filtering
+            target_district = self.df_data[self.df_data["CustomerID"] == target_user_id]["District"].mode().values[0]
+            
+            # Get users from same district
+            district_users = self.df_data[
+                (self.df_data["District"] == target_district) & 
+                (self.df_data["CustomerID"] != target_user_id)
+            ]["CustomerID"].unique()
+            
+            district_users = [uid for uid in district_users if uid in user_item_matrix.index]
+
+            if not district_users:
+                return {"status": "error", "message": "No similar users found", "recommendations": []}
+
+            # Calculate similarities
+            filtered_matrix = user_item_matrix.loc[[target_user_id] + district_users]
+            similarities = cosine_similarity(filtered_matrix)[0][1:]
+
+            # Get current user items
+            current_items = set(user_item_matrix.loc[target_user_id][user_item_matrix.loc[target_user_id] > 0].index)
+            updated_items = current_items.union(set(stock_codes))
+
+            # Find recommendations
+            recommendations = defaultdict(lambda: {"score": 0, "users": []})
+            similar_users = sorted(zip(district_users, similarities), key=lambda x: x[1], reverse=True)[:10]
+
+            for similar_user, similarity in similar_users:
+                similar_items = user_item_matrix.loc[similar_user]
+                for item in similar_items[similar_items > 0].index:
+                    if item not in updated_items:
+                        recommendations[item]["score"] += similarity
+                        recommendations[item]["users"].append(similar_user)
+
+            # Format results
+            result = []
+            for item, data in sorted(recommendations.items(), key=lambda x: x[1]["score"], reverse=True)[:top_n]:
+                try:
+                    item_info = self.df_data[self.df_data["StockCode"] == item].iloc[0]
+                    result.append({
+                        "stock_code": item,
+                        "description": item_info["Description"],
+                        "unit_price": float(item_info["UnitPrice"]),
+                        # "source": "Collaborative Filtering",
+                        # "popularity": len(data["users"]),
+                        "score": float(data["score"])
+                    })
+                except Exception as e:
+                    continue
+
+            return {
+                "status": "success",
+                "target_user_id": target_user_id,
+                "district": target_district,
+                "recommendations": result
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e), "recommendations": []}
+
+    def _content_based_filtering(self, target_user_id: int, stock_codes: List[str], recommendations_per_stock: int = 3) -> Dict[str, Any]:
+        """Generate recommendations using content-based filtering."""
+        try:
+            if self.df_data is None:
+                return {"status": "error", "message": "Data not available", "recommendations": []}
+
+            # Prepare vectors if not done
+            self._prepare_content_vectors()
+
+            all_recommendations = []
+            seen_descriptions = set()
+
+            for stock_code in stock_codes:
+                # Find product index
+                indices = self.df_data.index[self.df_data["StockCode"] == stock_code].tolist()
+                if not indices:
+                    continue
+
+                input_idx = indices[0]
+                input_vector = self.tfidf_matrix[input_idx]
+                similarity_scores = cosine_similarity(input_vector, self.tfidf_matrix).flatten()
+
+                # Get input product info
+                input_description = self.df_data.at[input_idx, "Description"]
+                seen_descriptions.add(input_description)
+
+                # Find similar products
+                sorted_indices = similarity_scores.argsort()[::-1]
+                recommendations = []
+
+                for idx in sorted_indices:
+                    if idx == input_idx:
+                        continue
+                    
+                    desc = self.df_data.at[idx, "Description"]
+                    if desc not in seen_descriptions:
+                        try:
+                            recommendations.append({
+                                "stock_code": self.df_data.at[idx, "StockCode"],
+                                "description": desc,
+                                "unit_price": float(self.df_data.at[idx, "UnitPrice"]),
+                                # "source": "Content-Based",
+                                # "popularity": 0,
+                                "score": float(similarity_scores[idx])
+                            })
+                            seen_descriptions.add(desc)
+                        except Exception as e:
+                            continue
+
+                    if len(recommendations) >= recommendations_per_stock:
+                        break
+
+                all_recommendations.extend(recommendations)
+
+            return {
+                "status": "success",
+                "target_user_id": target_user_id,
+                "recommendations": all_recommendations
+            }
+
+        except Exception as e:
+            return {"status": "error", "message": str(e), "recommendations": []}
+
+    def _rerank_recommendations(self, collaborative_results: Dict, content_based_results: Dict, top_n: int = 5) -> List[Dict[str, Any]]:
+        """LangGraph agent to rerank and combine recommendations."""
+        try:
+            # Combine all recommendations
+            all_recommendations = {}
+            
+            # Add collaborative filtering results
+            if collaborative_results.get("status") == "success":
+                for rec in collaborative_results.get("recommendations", []):
+                    stock_code = rec["stock_code"]
+                    if stock_code not in all_recommendations:
+                        all_recommendations[stock_code] = rec.copy()
+                    else:
+                        # Mark as "Both" if from multiple sources
+                        all_recommendations[stock_code]["source"] = "Both"
+                        all_recommendations[stock_code]["score"] += rec["score"]
+
+            # Add content-based results
+            if content_based_results.get("status") == "success":
+                for rec in content_based_results.get("recommendations", []):
+                    stock_code = rec["stock_code"]
+                    if stock_code not in all_recommendations:
+                        all_recommendations[stock_code] = rec.copy()
+                    else:
+                        # Mark as "Both" and combine scores
+                        all_recommendations[stock_code]["source"] = "Both"
+                        all_recommendations[stock_code]["score"] += rec["score"]
+
+            # Filter valid recommendations
+            valid_recommendations = []
+            for stock_code, rec in all_recommendations.items():
+                # Validate recommendation data
+                if (rec.get("stock_code") and 
+                    rec.get("description") and 
+                    rec.get("description").strip() not in ["", "Not Available", "N/A"] and
+                    rec.get("unit_price", 0) > 0):
+                    valid_recommendations.append(rec)
+
+            # Sort by combined score (collaborative score + content score)
+            valid_recommendations.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+            # Return top N unique recommendations
+            final_recommendations = []
+            seen_stock_codes = set()
+            
+            for rec in valid_recommendations:
+                if rec["stock_code"] not in seen_stock_codes and len(final_recommendations) < top_n:
+                    final_recommendations.append({
+                        "Stock Code": rec["stock_code"],
+                        "Description": rec["description"],
+                        "Unit Price": rec["unit_price"],
+                        # "Source": rec["source"],
+                        # "Popularity": rec.get("popularity", 0)
+                    })
+                    seen_stock_codes.add(rec["stock_code"])
+
+            return final_recommendations
+
+        except Exception as e:
+            print(f"❌ Error in reranking: {e}")
+            return []
+
+    def _generate_recommendations_node(self, state: ConversationState) -> ConversationState:
+        """Generate recommendations using LangGraph pipeline instead of CrewAI."""
+        try:
+            user_id = state.get("user_id")
+            extracted = state.get("extracted_info", {})
+            stock_codes = extracted.get("stock_codes", [])
+            specific_products = extracted.get("specific_products", [])
+            
+            # Get original query for context
+            user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
+            original_query = user_messages[-1].content if user_messages else ""
+            
+            print(f"🎯 Generating recommendations: User ID={user_id}, Stock Codes={stock_codes}, Products={specific_products}")
+            
+            if user_id and self.df_data is not None:
+                final_stock_codes = []
+                
+                # Handle stock codes directly provided
+                if stock_codes:
+                    final_stock_codes.extend(stock_codes)
+                
+                # Handle product descriptions - convert to stock codes
+                if specific_products and not stock_codes:
+                    for product_desc in specific_products:
+                        stock_code = self._get_stock_code_from_description(product_desc)
+                        if stock_code:
+                            final_stock_codes.append(stock_code)
+                
+                # If no specific products/codes, get from user's history
+                if not final_stock_codes:
+                    user_purchases = self.df_data[self.df_data['CustomerID'] == user_id]
+                    if len(user_purchases) > 0:
+                        final_stock_codes = user_purchases['StockCode'].unique()[:3].tolist()
+                
+                if final_stock_codes:
+                    print(f"📦 Using stock codes: {final_stock_codes}")
+                    
+                    # Run both recommendation algorithms
+                    collaborative_results = self._collaborative_filtering(user_id, final_stock_codes, top_n=10)
+                    content_based_results = self._content_based_filtering(user_id, final_stock_codes, recommendations_per_stock=3)
+                    
+                    # Rerank using LangGraph agent
+                    final_recommendations = self._rerank_recommendations(collaborative_results, content_based_results, top_n=5)
+                    
+                    # Generate response
+                    if final_recommendations:
+                        response = self._format_langgraph_recommendations(final_recommendations, user_id, original_query)
+                    else:
+                        response = f"I couldn't find suitable recommendations for customer {user_id} at the moment. Please try with different preferences."
+                    
+                    state["messages"].append(AIMessage(content=response))
+                    state["conversation_stage"] = "recommended"
+                else:
+                    # No purchase history or specific products
+                    fallback_msg = f"""
+I found customer {user_id}, but couldn't determine specific products for recommendations. 
+
+Please specify:
+• Specific product names or descriptions you're interested in
+• Product stock codes you'd like similar items for
+• Or let me know your general preferences
+
+What type of products interest you most?
+                    """
+                    state["messages"].append(AIMessage(content=fallback_msg))
+                    state["conversation_stage"] = "fallback"
+            else:
+                response = "Please provide your customer ID for personalized recommendations."
+                state["messages"].append(AIMessage(content=response))
+                state["conversation_stage"] = "needs_customer_id"
+                
+        except Exception as e:
+            error_msg = f"I encountered an issue generating recommendations: {str(e)}. Let me try a different approach."
+            state["messages"].append(AIMessage(content=error_msg))
+            state["conversation_stage"] = "error"
+            print(f"❌ Recommendation error: {e}")
+        
+        return state
+
+    def _format_langgraph_recommendations(self, recommendations: List[Dict], user_id: int, original_query: str) -> str:
+        """Format the LangGraph recommendations for display."""
+        if not recommendations:
+            return f"I couldn't find suitable recommendations for customer {user_id} at the moment."
+
+        header = f"🎯 **Personalized Recommendations for Customer {user_id}:**\n\n"
+        
+        formatted_recs = []
+        for i, rec in enumerate(recommendations, 1):
+            formatted_recs.append(
+                f"{i}. **{rec['Description']}** (Stock: {rec['Stock Code']})\n"
+                f"   💰 Price: ${rec['Unit Price']:.2f}\n"
+                # f"   📊 Source: {rec['Source']}\n"
+                # f"   📈 Popularity: {rec['Popularity']}\n"
+            )
+        
+        footer = "\n💡 These recommendations are based on your purchase history and similar customer preferences using advanced AI algorithms!"
+        
+        return header + "\n".join(formatted_recs) + footer
+
     def load_data(self):
         """Load and prepare recommendation data."""
         try:
             df = self.data_processor.load_data_from_sqlite()
             if df is not None:
                 self.df_data = self.data_processor.clean_data(df)
-                self.crew_agents.set_dataframe(self.df_data)
+                # self.crew_agents.set_dataframe(self.df_data)
                 print(f"✅ Loaded {len(self.df_data)} transaction records")
             else:
                 print("❌ Failed to load data")
@@ -296,7 +669,6 @@ Generate a helpful, accurate response based on the specific question asked.
         """
         results = self._execute_db_query(query, (f"%{description}%",))
         return results[0]['StockCode'] if results else None
-# Add after line 260 (after _get_stock_code_from_description method):
 
     def _extract_context_from_history(self, state: ConversationState) -> Dict[str, Any]:
         """Extract relevant context from conversation history."""
@@ -408,7 +780,7 @@ Generate a helpful, accurate response based on the specific question asked.
             self._route_after_extraction,
             {
                 "recommend": "generate_recommendations",
-                "clarify": "clarify"
+                "clarify": "clarify",
             }
         )
         
@@ -486,15 +858,24 @@ If you have a customer ID, feel free to mention it for personalized recommendati
         print(f"🔍 Analyzing query: '{last_user_message[:50]}...'")
 
         # Extract context from conversation messages
-        conversation_context = self._extract_context_from_history(state)
-        
+        conversation_context = self._extract_context_from_messages(state)  # ✅ Uses built-in messages
+        print(f"🐛 DEBUG - Extracted context: {conversation_context}")  # ADD THIS LINE
         # Resolve contextual references
         resolved_message, resolved_customer_id = self._resolve_contextual_references(
             last_user_message, conversation_context
         )
+        if resolved_customer_id and not state.get("user_id"):
+            state["user_id"] = resolved_customer_id
+            print(f"🔄 Applied context customer ID: {resolved_customer_id}")
+        
+        # Also apply context customer ID if available
+        if not state.get("user_id") and conversation_context.get("last_customer_id"):
+            state["user_id"] = conversation_context["last_customer_id"]
+            print(f"🔄 Applied context customer ID from history: {conversation_context['last_customer_id']}")
         
         print(f"🔍 Original query: '{last_user_message[:50]}...'")
         if resolved_message != last_user_message:
+            state["user_id"] = resolved_customer_id
             print(f"🔄 Resolved query: '{resolved_message[:50]}...'")
         
         # Use resolved message for analysis
@@ -503,37 +884,42 @@ If you have a customer ID, feel free to mention it for personalized recommendati
         # Enhanced prompt for better intent classification
         # FIXED: Properly escape the JSON template to avoid f-string format errors
         analysis_prompt = f"""
-    Analyze this user message for an e-commerce recommendation system and classify the intent accurately:
+Analyze this user message for an e-commerce recommendation system and classify the intent accurately:
 
-    User message: "{analysis_message}"
+User message: "{analysis_message}"
 
-    Conversation Context:
-    - Last mentioned customer ID: {conversation_context.get('last_customer_id', 'None')}
-    - Previously mentioned customer IDs: {conversation_context.get('mentioned_customer_ids', [])}
+Conversation Context:
+- Last mentioned customer ID: {conversation_context.get('last_customer_id', 'None')}
+- Previously mentioned customer IDs: {conversation_context.get('mentioned_customer_ids', [])}
 
-    Classification rules:
-    - "customer_lookup": User wants customer information, purchase history, or analysis
-    - "recommendation_request": User wants product recommendations
-    - "product_inquiry": User asks about specific products
-    - "general_question": User asks unrelated questions
+IMPORTANT CONTEXT RULES:
+- If the user says "explain", "tell me more", "summarize it", "elaborate" and there's a last_customer_id, treat as "customer_lookup"
+- If the user uses vague language but there's conversation context, infer the intent from context
+- For contextual follow-ups, use the customer_id from context
 
-    Please extract and return in JSON format:
-    {{
-        "intent": "recommendation_request|product_inquiry|customer_lookup|general_question|greeting",
-        "customer_id": "extracted customer ID number if mentioned, null otherwise",
-        "resolved_customer_id": {resolved_customer_id if resolved_customer_id else 'null'},
-        "product_preferences": {{
-            "categories": ["list of product categories mentioned"],
-            "price_range": "budget range if mentioned",
-            "keywords": ["key product terms and descriptive words"],
-            "occasion": "gift|personal|business|other"
-        }},
-        "confidence": 0.9,
-        "query_type": "purchase_history|customer_analysis|product_recommendation|product_info|segment_inquiry"
-    }}
+Classification rules:
+- "customer_lookup": User wants customer information, purchase history, or analysis
+- "recommendation_request": User wants product recommendations
+- "product_inquiry": User asks about specific products
+- "general_question": User asks unrelated questions (ONLY if no context exists)
 
-    Be precise and focus on the main intent of the message.
-        """
+Please extract and return in JSON format. ANALYZE THE MESSAGE and determine the appropriate values:
+{{
+    "intent": "determine based on the message and context",
+    "customer_id": "use context customer_id if the message refers to previous context, otherwise extract from message",
+    "resolved_customer_id": {conversation_context.get('last_customer_id', 'null')},
+    "product_preferences": {{
+        "categories": ["list any mentioned categories"],
+        "price_range": "any mentioned price range",
+        "keywords": ["extract keywords from message"],
+        "occasion": "determine from context"
+    }},
+    "confidence": 0.9,
+    "query_type": "determine based on intent and message"
+}}
+
+Use conversation context to resolve ambiguous requests like "explain", "summarize it", etc.
+"""
         
         try:
             analysis = self.llm.invoke([HumanMessage(content=analysis_prompt)])
@@ -600,8 +986,18 @@ If you have a customer ID, feel free to mention it for personalized recommendati
         print(f"📋 Info check: Customer ID={has_customer_id}, Preferences={has_preferences}, Intent={intent}, Confidence={confidence}")
         
         # Determine if we can proceed with recommendations
-        if intent == "recommendation_request" and (has_customer_id or has_preferences):
-            state["conversation_stage"] = "ready_to_recommend"
+        if intent == "recommendation_request":
+            if has_customer_id:
+                state["conversation_stage"] = "ready_to_recommend"
+            else:
+                # Try to use context customer ID
+                conversation_context = self._extract_context_from_messages(state)
+                if conversation_context.get("last_customer_id"):
+                    state["user_id"] = conversation_context["last_customer_id"]
+                    state["conversation_stage"] = "ready_to_recommend"
+                    print(f"🔄 Using context customer ID: {conversation_context['last_customer_id']}")
+                else:
+                    state["conversation_stage"] = "needs_clarification"
         elif confidence < 0.7 or intent == "general_question":
             state["conversation_stage"] = "needs_clarification"
         else:
@@ -778,92 +1174,14 @@ Please ask me something related to our e-commerce platform!
                             for i, rec in enumerate(recommendations, 1):
                                 response += f"{i}. **{rec.get('Description', 'Unknown Product')}** (Stock: {rec.get('Stock Code', 'N/A')})\n"
                                 response += f"   💰 Price: ${rec.get('Unit Price', 0):.2f}\n"
-                                response += f"   📊 Popularity Score: {rec.get('Popularity', 'N/A')}\n"
-                                response += f"   🔍 Source: {rec.get('Source', 'AI Analysis')}\n\n"
+                                # response += f"   📊 Popularity Score: {rec.get('Popularity', 'N/A')}\n"
+                                # response += f"   🔍 Source: {rec.get('Source', 'AI Analysis')}\n\n"
                             
                             return response + "💡 These recommendations are based on your purchase history and similar customer preferences!"
             except Exception as e:
                 print(f"❌ Fallback formatting error: {e}")
             
             return f"I found some great recommendations for customer {user_id}, but had trouble formatting them. Please try again!"
-
-    def _generate_recommendations_node(self, state: ConversationState) -> ConversationState:
-            """Generate recommendations using CrewAI agents with RAG-based response generation."""
-            try:
-                user_id = state.get("user_id")
-                extracted = state.get("extracted_info", {})
-                stock_codes = extracted.get("stock_codes", [])
-                specific_products = extracted.get("specific_products", [])
-                
-                # Get original query for context
-                user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
-                original_query = user_messages[-1].content if user_messages else ""
-                
-                print(f"🎯 Generating recommendations: User ID={user_id}, Stock Codes={stock_codes}, Products={specific_products}")
-                
-                if user_id and self.df_data is not None:
-                    final_stock_codes = []
-                    
-                    # Handle stock codes directly provided
-                    if stock_codes:
-                        final_stock_codes.extend(stock_codes)
-                    
-                    # Handle product descriptions - convert to stock codes
-                    if specific_products and not stock_codes:
-                        for product_desc in specific_products:
-                            stock_code = self._get_stock_code_from_description(product_desc)
-                            if stock_code:
-                                final_stock_codes.append(stock_code)
-                    
-                    # If no specific products/codes, get from user's history
-                    if not final_stock_codes:
-                        user_purchases = self.df_data[self.df_data['CustomerID'] == user_id]
-                        if len(user_purchases) > 0:
-                            final_stock_codes = user_purchases['StockCode'].unique()[:3].tolist()
-                    
-                    if final_stock_codes:
-                        print(f"📦 Using stock codes: {final_stock_codes}")
-                        
-                        # Use CrewAI for recommendations
-                        results = self.crew_agents.run_recommendations(
-                            target_user_id=user_id,
-                            stock_codes=final_stock_codes,
-                            top_n=5
-                        )
-                        
-                        # Generate intelligent response using RAG approach
-                        rec_text = self._generate_intelligent_recommendation_response(
-                            original_query, results, user_id, extracted
-                        )
-                        
-                        state["messages"].append(AIMessage(content=rec_text))
-                        state["conversation_stage"] = "recommended"
-                    else:
-                        # No purchase history or specific products
-                        fallback_msg = f"""
-        I found customer {user_id}, but couldn't determine specific products for recommendations. 
-
-        Please specify:
-        • Specific product names or descriptions you're interested in
-        • Product stock codes you'd like similar items for
-        • Or let me know your general preferences
-
-        What type of products interest you most?
-                        """
-                        state["messages"].append(AIMessage(content=fallback_msg))
-                        state["conversation_stage"] = "fallback"
-                else:
-                    response = "Please provide your customer ID for personalized recommendations."
-                    state["messages"].append(AIMessage(content=response))
-                    state["conversation_stage"] = "needs_customer_id"
-                    
-            except Exception as e:
-                error_msg = f"I encountered an issue generating recommendations: {str(e)}. Let me try a different approach."
-                state["messages"].append(AIMessage(content=error_msg))
-                state["conversation_stage"] = "error"
-                print(f"❌ Recommendation error: {e}")
-            
-            return state
             
     def _follow_up_node(self, state: ConversationState) -> ConversationState:
         """Handle follow-up questions and refinements."""
@@ -977,8 +1295,8 @@ The more details you provide, the better I can assist you!
                                     'description': rec.get('Description', rec.get('description', '')),
                                     'unit_price': rec.get('Unit Price', rec.get('unit_price', 0)),
                                     'confidence': rec.get('Confidence', rec.get('confidence', 0)),
-                                    'source': rec.get('Source', 'CrewAI'),
-                                    'popularity': rec.get('Popularity', rec.get('popularity', 'Medium'))
+                                    # 'source': rec.get('Source', 'CrewAI'),
+                                    # 'popularity': rec.get('Popularity', rec.get('popularity', 'Medium'))
                                 })
                         except json.JSONDecodeError as e:
                             print(f"⚠️ JSON decode error: {e}")
@@ -1062,8 +1380,8 @@ The more details you provide, the better I can assist you!
                 f"{i}. **{rec.get('description', 'Unknown Product')}** ({rec.get('stock_code', 'N/A')})\n"
                 f"   💰 Price: ${rec.get('unit_price', 0):.2f}\n"
                 f"   🎯 Match Score: {confidence:.1f}/10\n"
-                f"   📈 Popularity: {popularity}\n"
-                f"   🔍 Source: {source}\n"
+                # f"   📈 Popularity: {popularity}\n"
+                # f"   🔍 Source: {source}\n"
             )
         
         footer = "\n💡 Would you like more details about any of these products, or shall I find different recommendations based on other preferences?"
@@ -1073,15 +1391,30 @@ The more details you provide, the better I can assist you!
     # Main interaction methods
     def chat(self, message: str, user_id: str = "default_user") -> str:
         """Main chat interface with natural language processing."""
-        # Create initial state if starting new conversation
-        config = {"configurable": {"thread_id": user_id}}
+        # Create thread config - this is the key for persistence
+        config = {"configurable": {"thread_id": "1"}}
         
-        # Get current state or create new one
+        # DEBUG: Print thread and message info
+        print(f"🧵 Thread ID: {user_id}")
+        print(f"📝 Message: {message}")
+        
+        # Get current state - this should retrieve existing conversation
         try:
             current_state = self.graph.get_state(config)
+            print(f"🔍 Current state exists: {current_state is not None}")
+            print(f"🔍 Current state values: {current_state.values is not None if current_state else False}")
+            
             if current_state and current_state.values:
+                # ✅ Use existing state with conversation history
                 state = current_state.values
+                existing_messages = state.get('messages', [])
+                print(f"🔄 Found existing state with {len(existing_messages)} messages")
+                for i, msg in enumerate(existing_messages):
+                    msg_type = "USER" if isinstance(msg, HumanMessage) else "AI"
+                    print(f"  Message {i}: {msg_type}: {msg.content[:50]}...")
             else:
+                # Only create new state for very first conversation
+                print(f"🆕 Creating new conversation state")
                 state = ConversationState(
                     messages=[],
                     user_id=None,
@@ -1090,40 +1423,50 @@ The more details you provide, the better I can assist you!
                     conversation_stage="greeting",
                     user_preferences={},
                     extracted_info={},
-                    conversation_history=[]  # NEW: Initialize conversation history
-
+                    conversation_history=[]
                 )
-        except:
+        except Exception as e:
+            print(f"❌ Error getting state: {e}")
+            # Fallback to new state
             state = ConversationState(
                 messages=[],
                 user_id=None,
                 context={},
                 last_recommendations=[],
-                conversation_stage="greeting",
+                conversation_stage="greeting", 
                 user_preferences={},
                 extracted_info={},
                 conversation_history=[]
             )
         
-        # Add user message
+        # Add NEW user message to existing state
         if message.strip():
             state["messages"].append(HumanMessage(content=message))
+            print(f"📝 Added user message. Total messages now: {len(state['messages'])}")
         
-        # Run the graph
+        # Run the graph with the state - LangGraph will automatically checkpoint
         try:
             result = self.graph.invoke(state, config)
             
-            # Get all AI messages
+            # Extract the response
             ai_messages = [msg for msg in result["messages"] if isinstance(msg, AIMessage)]
             if ai_messages:
-                # Default: return the last AI message (since we fixed the flow routing)
-                return ai_messages[-1].content
+                response = ai_messages[-1].content
+                print(f"🤖 Generated response length: {len(response)}")
+                return response
             else:
                 return "I'm here to help with recommendations! What are you looking for?"
                 
         except Exception as e:
             print(f"❌ Error in chat: {e}")
             return "I encountered an issue. Could you please rephrase your request?"
+        
+    # def chat_stream(self, message: str, user_id: str = "default_user"):
+    #     for chunk in self.llm.stream(
+    #         [HumanMessage(content=message)],
+    #         stream_mode="updates"
+    #     ):
+    #         yield chunk  
 
 # Django Integration
 def create_chatbot_view(request):
@@ -1133,9 +1476,13 @@ def create_chatbot_view(request):
         message = data.get('message', '')
         user_id = data.get('user_id', 'default')
         
-        # Initialize chatbot (you might want to cache this)
-        chatbot = RecommendationChatbot()
-        response = chatbot.chat(message, user_id)
+        # Use singleton chatbot instance to preserve memory
+        global _chatbot_instance
+        if _chatbot_instance is None:
+            print("🔧 Initializing new chatbot instance...")
+            _chatbot_instance = RecommendationChatbot()
+        
+        response = _chatbot_instance.chat(message, user_id)
         
         return JsonResponse({
             'response': response,
