@@ -17,6 +17,7 @@ import csv
 from django.utils.dateparse import parse_datetime
 from decimal import Decimal
 
+
 def load_all_transactions_with_error_reporting():
     """Load ALL transactions with detailed error reporting."""
     print("🚀 Loading ALL transactions with detailed error reporting...")
@@ -156,5 +157,38 @@ def load_all_transactions_with_error_reporting():
     
     return True
 
+def load_data_to_db():
+    """Load all data to database in the correct order."""
+    print("🚀 Starting comprehensive data loading...")
+    
+    # Step 1: Load products first
+    if not load_products():
+        print("❌ Failed to load products")
+        return False
+    
+    # Step 2: Load customers
+    if not load_customers():
+        print("❌ Failed to load customers")
+        return False
+    
+    # Step 3: Load transactions (depends on products and customers)
+    if not load_all_transactions_with_error_reporting():
+        print("❌ Failed to load transactions")
+        return False
+    
+    print("✅ All data loaded successfully!")
+    
+    # Print final counts
+    product_count = Dim_Products.objects.count()
+    customer_count = Dim_Customers.objects.count()
+    transaction_count = Fact_Transactions.objects.count()
+    
+    print(f"📊 Final Database Counts:")
+    print(f"  Products: {product_count:,}")
+    print(f"  Customers: {customer_count:,}")
+    print(f"  Transactions: {transaction_count:,}")
+    
+    return True
+
 if __name__ == "__main__":
-    load_all_transactions_with_error_reporting()
+    load_data_to_db()

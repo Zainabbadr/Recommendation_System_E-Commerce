@@ -47,5 +47,5 @@ groq>=0.4.0
 
 # Optional packages for memory (if used)
 langgraph-checkpoint-sqlite
-crewai>=0.118.0
-crewai-tools>=0.43.0
+# crewai>=0.118.0
+# crewai-tools>=0.43.0
