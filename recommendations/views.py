@@ -1,7 +1,7 @@
 import json
 import sys
 from pathlib import Path
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.http import JsonResponse
 
 # Add src to path for imports
@@ -224,8 +224,51 @@ def health_check(request):
             'error': str(e)
         })
 
+def login_view(request):
+    """Handle login requests and validate customer IDs."""
+    if request.method == 'POST':
+        customer_id = request.POST.get('customer_id')
+        
+        if not customer_id:
+            return render(request, 'recommendations/login.html', {
+                'error': 'Please enter your Customer ID'
+            })
+        
+        try:
+            customer_id = int(customer_id)
+            
+            # Validate customer exists in database
+            from recommendations.models import Dim_Customers
+            
+            try:
+                customer = Dim_Customers.objects.get(CustomerID=customer_id)
+                # Store customer ID in session
+                request.session['customer_id'] = customer_id
+                return redirect('recommendations:index')
+            except Dim_Customers.DoesNotExist:
+                return render(request, 'recommendations/login.html', {
+                    'error': 'Customer ID not found in database'
+                })
+                
+        except ValueError:
+            return render(request, 'recommendations/login.html', {
+                'error': 'Please enter a valid Customer ID (number)'
+            })
+    
+    return render(request, 'recommendations/login.html')
+
+def logout_view(request):
+    """Handle logout requests."""
+    # Clear the session
+    if 'customer_id' in request.session:
+        del request.session['customer_id']
+    return redirect('recommendations:login')
+
 def index(request):
     """Main page with dual-tab recommendation form."""
+    # Check if customer is logged in
+    customer_id = request.session.get('customer_id')
+    
     # Get products for dropdown (always needed for GET and POST)
     available_products = get_products_for_dropdown()
     
@@ -235,6 +278,10 @@ def index(request):
         selected_stock_codes = request.POST.getlist('selected_products')
         top_n = 7  # Always 7 recommendations
         
+        # Use session customer ID if not provided
+        if not target_user_id and customer_id:
+            target_user_id = str(customer_id)
+        
         try:
             target_user_id = int(target_user_id)
             
@@ -242,7 +289,8 @@ def index(request):
             if not selected_stock_codes:
                 return render(request, 'recommendations/index.html', {
                     'error': 'Please select at least one product',
-                    'available_products': available_products
+                    'available_products': available_products,
+                    'customer_id': customer_id
                 })
             
             # Get data
@@ -250,7 +298,8 @@ def index(request):
             if df_clean is None:
                 return render(request, 'recommendations/index.html', {
                     'error': 'Failed to load data',
-                    'available_products': available_products
+                    'available_products': available_products,
+                    'customer_id': customer_id
                 })
             
             print(f"📊 DataFrame columns: {list(df_clean.columns)}")

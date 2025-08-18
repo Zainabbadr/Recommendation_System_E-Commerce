@@ -16,11 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from recommendations import views
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path('', include('recommendations.urls')),
-    path('', views.index, name='index'),
-    path('chatbot/', views.chatbot_view, name='chatbot'),  # Add this line
-    # path('chatbot-stream/', views.chatbot_stream_view, name='chatbot_stream'),
 ]

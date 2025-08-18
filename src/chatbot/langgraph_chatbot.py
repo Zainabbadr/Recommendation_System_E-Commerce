@@ -264,10 +264,14 @@ class RecommendationChatbot:
         try:
             # Try to match by stock code first
             stock_code_query = """
-            SELECT p.StockCode, p.Description, p.Description_Categorize,
+            SELECT 
+                p.StockCode, 
+                p.Description, 
+                p.Description_Categorize,
                 COUNT(t.InvoiceNo) as transaction_count,
                 SUM(t.Quantity) as total_quantity_sold,
-                AVG(t.UnitPrice) as avg_price
+                AVG(t.UnitPrice) as avg_price,
+                GROUP_CONCAT(DISTINCT t.CustomerID_id) as customer_ids
             FROM recommendations_dim_products p
             LEFT JOIN recommendations_fact_transactions t ON p.StockCode = t.StockCode_id
             WHERE p.StockCode LIKE ?
@@ -1322,33 +1326,33 @@ Generate the final response for the user:
 
 # ==================== DJANGO VIEW ====================
 
-async def create_chatbot_view(request):
-    """Django view for the chatbot interface with streaming support."""
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            message = data.get('message', '')
-            user_id = data.get('user_id', 'default')
+# async def create_chatbot_view(request):
+#     """Django view for the chatbot interface with streaming support."""
+#     if request.method == 'POST':
+#         try:
+#             data = json.loads(request.body)
+#             message = data.get('message', '')
+#             user_id = data.get('user_id', 'default')
             
-            global _chatbot_instance
-            if _chatbot_instance is None:
-                _chatbot_instance = RecommendationChatbot()
+#             global _chatbot_instance
+#             if _chatbot_instance is None:
+#                 _chatbot_instance = RecommendationChatbot()
             
-            # For streaming, return a streaming response
-            from django.http import StreamingHttpResponse
+#             # For streaming, return a streaming response
+#             from django.http import StreamingHttpResponse
             
-            async def generate():
-                try:
-                    async for chunk in _chatbot_instance.chat_stream(message, user_id):
-                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-                except Exception as e:
-                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+#             async def generate():
+#                 try:
+#                     async for chunk in _chatbot_instance.chat_stream(message, user_id):
+#                         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+#                 except Exception as e:
+#                     yield f"data: {json.dumps({'error': str(e)})}\n\n"
             
-            return StreamingHttpResponse(
-                generate(),
-                content_type='text/event-stream'
-            )
-        except Exception as e:
-            return JsonResponse({'error': f'Request processing error: {str(e)}'}, status=500)
+#             return StreamingHttpResponse(
+#                 generate(),
+#                 content_type='text/event-stream'
+#             )
+#         except Exception as e:
+#             return JsonResponse({'error': f'Request processing error: {str(e)}'}, status=500)
 
-    return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+#     return JsonResponse({'error': 'Only POST requests allowed'}, status=405)

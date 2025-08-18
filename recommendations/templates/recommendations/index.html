@@ -1,53 +1,306 @@
 {% extends 'recommendations/base.html' %}
 
 {% block content %}
-<div class="container-fluid">
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+    }
+
+    /* Modern Navbar */
+    .navbar {
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .navbar-brand {
+        color: #2c3e50 !important;
+        font-weight: 700;
+        font-size: 1.5rem;
+    }
+
+    /* Main Container */
+    .main-container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(20px);
+        border-radius: 20px;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+        margin: 2rem;
+        padding: 2rem;
+    }
+
+    /* Modern Tabs */
+    .nav-tabs {
+        border: none;
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 0.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .nav-tabs .nav-link {
+        border: none;
+        border-radius: 10px;
+        padding: 12px 24px;
+        font-weight: 600;
+        color: #6c757d;
+        transition: all 0.3s ease;
+        margin: 0 4px;
+    }
+
+    .nav-tabs .nav-link.active {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .nav-tabs .nav-link:hover {
+        color: #495057;
+        transform: translateY(-2px);
+    }
+
+    /* Cards */
+    .card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    }
+
+    .card-header {
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        border-bottom: 1px solid #dee2e6;
+        border-radius: 16px 16px 0 0 !important;
+        padding: 1.5rem;
+    }
+
+    /* Chat Interface */
+    #chat-container {
+        background: linear-gradient(135deg, #fafbfc, #f1f3f4);
+        border-radius: 12px;
+        height: 500px;
+        overflow-y: auto;
+        padding: 20px;
+        border: 1px solid #e9ecef;
+    }
+
+    .message-bubble {
+        max-width: 80%;
+        word-wrap: break-word;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        border-radius: 18px;
+    }
+
+    .bot-message .message-bubble {
+        background: linear-gradient(135deg, #e3f2fd, #f3e5f5) !important;
+        border: 1px solid #e1f5fe;
+    }
+
+    .user-message .message-bubble {
+        background: linear-gradient(135deg, #667eea, #764ba2) !important;
+        color: white;
+    }
+
+    .avatar {
+        font-size: 24px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Buttons */
+    .btn {
+        border-radius: 10px;
+        padding: 12px 24px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border: none;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+    }
+
+    .btn-warning {
+        background: linear-gradient(135deg, #ffd93d, #ff6b6b);
+        border: none;
+        color: white;
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    }
+
+    /* Form Controls */
+    .form-control, .form-select {
+        border-radius: 10px;
+        border: 2px solid #e9ecef;
+        padding: 12px 16px;
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    /* Recommendation Cards */
+    .recommendation-card {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: linear-gradient(135deg, #f8f9fa, #ffffff);
+        transition: all 0.3s ease;
+    }
+
+    .recommendation-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Alerts */
+    .alert {
+        border: none;
+        border-radius: 12px;
+        padding: 20px;
+    }
+
+    .alert-info {
+        background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+        color: #1565c0;
+    }
+
+    /* Loading Animation */
+    .typing-indicator {
+        display: none;
+    }
+
+    .typing-indicator.show {
+        display: block;
+    }
+
+    .spinner-border-sm {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    /* Interactive Elements */
+    .example-query {
+        cursor: pointer;
+        color: #667eea !important;
+        transition: all 0.3s ease;
+        padding: 2px 6px;
+        border-radius: 6px;
+    }
+
+    .example-query:hover {
+        background: rgba(102, 126, 234, 0.1);
+        text-decoration: none !important;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .main-container {
+            margin: 1rem;
+            padding: 1rem;
+        }
+        
+        #chat-container {
+            height: 400px;
+        }
+    }
+
+    /* Animations */
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .tab-content {
+        animation: slideIn 0.5s ease;
+    }
+</style>
+
+<div class="main-container">
     <!-- Tab Navigation -->
     <ul class="nav nav-tabs" id="recommendationTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="chatbot-tab" data-bs-toggle="tab" data-bs-target="#chatbot-recommendations" 
-                    type="button" role="tab" aria-controls="chatbot-recommendations" aria-selected="true">
-                🤖 AI Chatbot
+            <button class="nav-link{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %} active{% endif %}" 
+                    id="chatbot-tab" data-bs-toggle="tab" data-bs-target="#chatbot-recommendations" 
+                    type="button" role="tab" aria-controls="chatbot-recommendations" 
+                    aria-selected="{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %}true{% else %}false{% endif %}">
+                AI Chatbot
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-recommendations" 
-                    type="button" role="tab" aria-controls="ai-recommendations" aria-selected="false">
-                🚀 AI Recommendations
+            <button class="nav-link{% if request.GET.tab == 'ai-recommendations' %} active{% endif %}" 
+                    id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-recommendations" 
+                    type="button" role="tab" aria-controls="ai-recommendations" 
+                    aria-selected="{% if request.GET.tab == 'ai-recommendations' %}true{% else %}false{% endif %}">
+                AI Recommendations
             </button>
         </li>
-        <!-- Manual tab removed but fallback logic preserved -->
     </ul>
 
     <!-- Tab Content -->
-    <div class="tab-content mt-3" id="recommendationTabContent">
+    <div class="tab-content" id="recommendationTabContent">
         
         <!-- AI Chatbot Tab -->
-        <div class="tab-pane fade show active" id="chatbot-recommendations" role="tabpanel" aria-labelledby="chatbot-tab">
+        <div class="tab-pane fade{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %} show active{% endif %}" 
+             id="chatbot-recommendations" role="tabpanel" aria-labelledby="chatbot-tab">
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
                         <div class="card-header">
-                            <h5>🤖 AI Recommendation Chatbot</h5>
+                            <h5>AI Recommendation Chatbot</h5>
                             <small class="text-muted">Ask me anything about customer recommendations, purchase history, or product insights!</small>
                         </div>
                         <div class="card-body p-0">
                             <!-- Chat Interface -->
-                            <div id="chat-container" style="height: 500px; overflow-y: auto; padding: 15px; border-bottom: 1px solid #dee2e6;">
+                            <div id="chat-container">
                                 <div id="chat-messages">
                                     <!-- Welcome message -->
                                     <div class="message bot-message mb-3">
                                         <div class="d-flex">
-                                            <div class="avatar me-2">🤖</div>
+                                            <div class="avatar me-2"><i class="fas fa-robot"></i></div>
                                             <div class="message-content">
-                                                <div class="message-bubble bg-light p-3 rounded">
+                                                <div class="message-bubble p-3">
                                                     <strong>AI Assistant:</strong><br>
-                                                    👋 Hello! I'm your AI-powered recommendation assistant. I can help you with:
+                                                    Hello! I'm your AI-powered recommendation assistant. I can help you with:
                                                     <ul class="mt-2 mb-0">
-                                                        <li>🎯 <strong>Personalized recommendations</strong> for any customer</li>
-                                                        <li>📊 <strong>Customer behavior analysis</strong> and purchase patterns</li>
-                                                        <li>🔍 <strong>Product insights</strong> and market trends</li>
-                                                        <li>💬 <strong>Interactive conversations</strong> about your business data</li>
+                                                        <li><strong>Personalized recommendations</strong> for any customer</li>
+                                                        <li><strong>Customer behavior analysis</strong> and purchase patterns</li>
+                                                        <li><strong>Product insights</strong> and market trends</li>
+                                                        <li><strong>Interactive conversations</strong> about your business data</li>
                                                     </ul>
                                                     <div class="mt-3">
                                                         <strong>Try asking:</strong><br>
@@ -72,7 +325,7 @@
                                     </button>
                                 </div>
                                 <small class="text-muted mt-1 d-block">
-                                    💡 Tip: Be specific with customer IDs or product details for better recommendations
+                                    Tip: Be specific with customer IDs or product details for better recommendations
                                 </small>
                             </div>
                         </div>
@@ -87,7 +340,7 @@
                 <div class="col-md-12">
                     <div class="card">
                         <div class="card-header">
-                            <h5>🚀 AI Recommendations</h5>
+                            <h5>AI Recommendations</h5>
                             <small class="text-muted">Advanced AI recommendations with automatic fallback to manual algorithms</small>
                         </div>
                         <div class="card-body">
@@ -105,7 +358,7 @@
                                                    value="{{ target_user_id|default:'' }}" 
                                                    placeholder="Enter customer ID (e.g., 12345)" required>
                                             <div class="form-text">
-                                                💡 Use customer IDs like: 12345, 15311, 17841, etc.
+                                                Use customer IDs like: 12345, 15311, 17841, etc.
                                             </div>
                                         </div>
                                     </div>
@@ -126,18 +379,18 @@
                                                 {% endfor %}
                                             </select>
                                             <div class="form-text">
-                                                💡 Hold Ctrl/Cmd to select multiple products. Products shown with prices when available.
+                                                Hold Ctrl/Cmd to select multiple products. Products shown with prices when available.
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                                 
                                 <div class="mb-3">
-                                    <button type="submit" class="btn btn-success btn-lg">
+                                    <button type="submit" class="btn btn-primary btn-lg">
                                         <i class="fas fa-robot"></i> Get AI Recommendations
                                     </button>
                                     <small class="ms-3 text-muted">
-                                        🔄 Auto-fallback: Uses manual algorithms if AI is unavailable
+                                        Auto-fallback: Uses manual algorithms if AI is unavailable
                                     </small>
                                 </div>
                             </form>
@@ -163,14 +416,14 @@
                                         <div class="alert alert-info">
                                             <i class="fas fa-info-circle"></i> <strong>Source:</strong> {{ recommendation_source }}
                                             {% if error %}
-                                                <br><small>⚠️ {{ error }}</small>
+                                                <br><small>{{ error }}</small>
                                             {% endif %}
                                         </div>
                                     {% endif %}
                                     
                                     {% if selected_products %}
                                         <div class="mb-3">
-                                            <strong>📦 Based on selected products:</strong>
+                                            <strong>Based on selected products:</strong>
                                             <ul class="list-inline">
                                                 {% for product in selected_products %}
                                                     <li class="list-inline-item">
@@ -215,137 +468,52 @@
     </div>
 </div>
 
-<!-- Add some custom CSS for better chat styling -->
-<style>
-.recommendation-card {
-    border: 1px solid #e3e6f0;
-    border-radius: 0.35rem;
-    transition: all 0.3s ease;
-}
-
-.recommendation-card:hover {
-    border-color: #5a5c69;
-    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-    transform: translateY(-2px);
-}
-
-.chat-input-container {
-    background-color: #f8f9fc;
-    border-top: 1px solid #e3e6f0;
-}
-
-.message {
-    margin-bottom: 1rem;
-}
-
-.user-message {
-    text-align: right;
-}
-
-.user-message .message-bubble {
-    background-color: #4e73df !important;
-    color: white;
-    margin-left: auto;
-    max-width: 70%;
-}
-
-.bot-message .message-bubble {
-    background-color: #f8f9fc;
-    border: 1px solid #e3e6f0;
-    max-width: 85%;
-}
-
-.avatar {
-    width: 35px;
-    height: 35px;
-    border-radius: 50%;
-    background-color: #e3e6f0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    flex-shrink: 0;
-}
-
-.user-message .avatar {
-    background-color: #4e73df;
-    color: white;
-    margin-left: 10px;
-}
-
-.message-bubble {
-    border-radius: 18px;
-    padding: 12px 16px;
-    word-wrap: break-word;
-}
-
-.typing-indicator {
-    display: none;
-}
-
-.typing-indicator.show {
-    display: block;
-}
-
-.typing-dots {
-    display: inline-flex;
-    align-items: center;
-}
-
-.typing-dots span {
-    height: 8px;
-    width: 8px;
-    background-color: #858796;
-    border-radius: 50%;
-    display: inline-block;
-    margin: 0 2px;
-    animation: typing 1.4s infinite ease-in-out;
-}
-
-.typing-dots span:nth-child(1) { animation-delay: -0.32s; }
-.typing-dots span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes typing {
-    0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
-    40% { transform: scale(1); opacity: 1; }
-}
-
-#product-select {
-    height: 150px;
-}
-
-.nav-tabs .nav-link {
-    border-radius: 0.35rem 0.35rem 0 0;
-}
-
-.nav-tabs .nav-link.active {
-    background-color: #4e73df;
-    border-color: #4e73df;
-    color: white;
-}
-
-.card-header {
-    background-color: #f8f9fc;
-    border-bottom: 1px solid #e3e6f0;
-}
-
-.alert {
-    border-radius: 0.35rem;
-}
-
-.btn-success {
-    background-color: #1cc88a;
-    border-color: #1cc88a;
-}
-
-.btn-success:hover {
-    background-color: #17a673;
-    border-color: #17a673;
-}
-</style>
-
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Handle tab persistence
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeTab = urlParams.get('tab');
+    
+    // Set active tab based on URL parameter or form submission
+    if (activeTab === 'ai-recommendations' || window.location.hash === '#ai-recommendations') {
+        // Activate AI Recommendations tab
+        const aiTab = document.getElementById('ai-tab');
+        const aiContent = document.getElementById('ai-recommendations');
+        const chatbotTab = document.getElementById('chatbot-tab');
+        const chatbotContent = document.getElementById('chatbot-recommendations');
+        
+        if (aiTab && aiContent) {
+            // Remove active classes from chatbot
+            if (chatbotTab) {
+                chatbotTab.classList.remove('active');
+                chatbotTab.setAttribute('aria-selected', 'false');
+            }
+            if (chatbotContent) {
+                chatbotContent.classList.remove('show', 'active');
+                chatbotContent.classList.add('fade');
+            }
+            
+            // Add active classes to AI Recommendations
+            aiTab.classList.add('active');
+            aiTab.setAttribute('aria-selected', 'true');
+            aiContent.classList.add('show', 'active');
+            aiContent.classList.remove('fade');
+        }
+    }
+    
+    // Handle form submission to add tab parameter
+    const form = document.querySelector('form[action*="index"]');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            // Add tab parameter to form action
+            const tabParam = document.createElement('input');
+            tabParam.type = 'hidden';
+            tabParam.name = 'tab';
+            tabParam.value = 'ai-recommendations';
+            this.appendChild(tabParam);
+        });
+    }
+    
     const chatInput = document.getElementById('chat-input');
     const sendButton = document.getElementById('send-button');
     const chatMessages = document.getElementById('chat-messages');
@@ -363,13 +531,13 @@ document.addEventListener('DOMContentLoaded', function() {
         
         messageDiv.innerHTML = `
             <div class="d-flex ${isUser ? 'justify-content-end' : ''}">
-                ${!isUser ? '<div class="avatar me-2">🤖</div>' : ''}
+                ${!isUser ? '<div class="avatar me-2"><i class="fas fa-robot"></i></div>' : ''}
                 <div class="message-content">
                     <div class="message-bubble ${isUser ? 'bg-primary text-white' : 'bg-light'} p-3 rounded">
                         ${isUser ? `<strong>You:</strong><br>${message}` : `<strong>AI Assistant:</strong><br>${message}`}
                     </div>
                 </div>
-                ${isUser ? '<div class="avatar ms-2">👤</div>' : ''}
+                ${isUser ? '<div class="avatar ms-2"><i class="fas fa-user"></i></div>' : ''}
             </div>
         `;
         
@@ -384,7 +552,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         typingDiv.innerHTML = `
             <div class="d-flex">
-                <div class="avatar me-2">🤖</div>
+                <div class="avatar me-2"><i class="fas fa-robot"></i></div>
                 <div class="message-content">
                     <div class="message-bubble bg-light p-3 rounded">
                         <div class="typing-dots">
@@ -442,15 +610,15 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.status === 'success') {
                 addMessage(data.response);
             } else if (data.status === 'fallback') {
-                addMessage(`⚠️ ${data.response}`);
+                addMessage(`<i class="fas fa-exclamation-triangle"></i> ${data.response}`);
             } else {
-                addMessage(`❌ ${data.error || 'Sorry, I encountered an error. Please try again.'}`);
+                addMessage(`<i class="fas fa-times-circle"></i> ${data.error || 'Sorry, I encountered an error. Please try again.'}`);
             }
         })
         .catch(error => {
             hideTypingIndicator();
             console.error('Chat error:', error);
-            addMessage('❌ Sorry, I encountered a connection error. Please try again.');
+            addMessage('<i class="fas fa-times-circle"></i> Sorry, I encountered a connection error. Please try again.');
         })
         .finally(() => {
             isWaitingForResponse = false;
