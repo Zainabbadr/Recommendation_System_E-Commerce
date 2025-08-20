@@ -20,15 +20,313 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from src.data.processor import DataProcessor
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
+from difflib import SequenceMatcher
 
 _chatbot_instance = None 
-
-# Define valid intents for proper routing
-VALID_INTENTS = {
-    "greeting", "introduction", "customer_lookup", 
-    "recommendation_request", "product_inquiry",
-    "follow_up", "help", "general_question"
+FEW_SHOT_EXAMPLES = {
+    "greeting": [
+        "Hi there!",
+        "Hello, my name is Sarah",
+        "Good morning! I'm John", 
+        "Hey, how are you?",
+        "Greetings! I am Mike",
+        "Hi, I'm looking to get started",
+        "Hello there",
+        "Good afternoon"
+    ],
+    "customer_lookup": [
+        "Look up customer 12345",
+        "Tell me about customer 67890",
+        "Get info on customer 54321", 
+        "Show me customer 98765 details",
+        "Customer 11111 profile please",
+        "Find customer 22222 data",
+        "What can you tell me about customer 88888?",
+        "Customer 33333 history",
+        "Show customer 44444",
+        "Get customer 55555 information"
+    ],
+    "recommendation_request": [
+        "Recommend products for customer 12345",
+        "What should customer 67890 buy?",
+        "Suggest items for customer 54321",
+        "Find products similar to RED WIDGET", 
+        "Give me recommendations like BLUE GADGET",
+        "What products are like GREEN TOOL?",
+        "Customer 11111 needs recommendations",
+        "Show me 5 recommendations for customer 22222",
+        "Products similar to SUPER WIDGET",
+        "Recommend something like that"
+    ],
+    "product_inquiry": [
+        "Who bought product WIDGET123?",
+        "Who purchased item 45678?",
+        "Tell me about product RED WIDGET",
+        "Product GADGET456 analysis",
+        "Who bought GREEN TOOL?",
+        "Analysis of item 78910", 
+        "Product 12345 details",
+        "Who purchased BLUE WIDGET?",
+        "Analysis of product 99999",
+        "Product information for 88888"
+    ],
+    "general_question": [
+        "What can you help me with?",
+        "How do I use this system?",
+        "What are your capabilities?",
+        "Help me understand the features",
+        "Show me what you can do",
+        "Explain how this works", 
+        "What functions do you have?",
+        "Guide me through the options",
+        "What is this about?",
+        "Can you help?",
+        "Summarize this for me.",
+        "explain this",
+        "Summarize chat"
+    ]
 }
+
+# Parameter extraction examples for each intent
+PARAMETER_EXAMPLES = {
+    "greeting": {
+        "examples": [
+            ("Hi, I'm John", {"user_name": "John"}),
+            ("Hello, my name is Sarah", {"user_name": "Sarah"}),
+            ("Hey there!", {}),
+            ("Good morning, I am Mike", {"user_name": "Mike"})
+        ]
+    },
+    "customer_lookup": {
+        "examples": [
+            ("Look up customer 12345", {"customer_id": 12345, "lookup_type": "all"}),
+            ("Customer 67890 purchase history", {"customer_id": 67890, "lookup_type": "purchases"}),
+            ("Show me customer 54321 behavior", {"customer_id": 54321, "lookup_type": "behavior"}),
+            ("Customer 98765 segment info", {"customer_id": 98765, "lookup_type": "segment"})
+        ]
+    },
+    "recommendation_request": [
+        ("Recommend for customer 12345", {"customer_id": 12345, "recommendation_count": 5}),
+        ("Products like RED WIDGET", {"similar_to_product": "RED WIDGET", "recommendation_count": 5}),
+        ("Give me 10 suggestions for customer 67890", {"customer_id": 67890, "recommendation_count": 10}),
+        ("Similar to BLUE GADGET", {"similar_to_product": "BLUE GADGET", "recommendation_count": 5})
+    ],
+    "product_inquiry": [
+        ("Who bought WIDGET123?", {"stock_codes": ["WIDGET123"], "inquiry_type": "who bought"}),
+        ("Product RED WIDGET analysis", {"product_names": ["RED WIDGET"], "inquiry_type": "all"}),
+        ("Tell me about item 45678", {"stock_codes": ["45678"], "inquiry_type": "details"}),
+        ("Who purchased GREEN TOOL?", {"product_names": ["GREEN TOOL"], "inquiry_type": "who bought"})
+    ],
+    "general_question": [
+        ("What can you do?", {"help_type": "capabilities"}),
+        ("How do I use this?", {"help_type": "usage"}),
+        ("Show me examples", {"help_type": "examples"}),
+        ("Help me", {"help_type": "general"})
+    ]
+}
+
+class AgentPromptClassifier:
+    """LLM-based agent classifier that can select multiple routes using few-shot prompting."""
+    
+    def __init__(self, few_shot_examples: Dict[str, List[str]], parameter_examples: Dict[str, List[Tuple]], llm):
+        self.few_shot_examples = few_shot_examples
+        self.parameter_examples = parameter_examples
+        self.intent_classes = list(few_shot_examples.keys())
+        self.llm = llm  # Groq LLM instance
+    
+    def classify_intent(self, prompt: str) -> Dict[str, Any]:
+        """Classify prompt intent using LLM agent with few-shot examples."""
+        
+        # Build few-shot examples for the prompt
+        examples_text = ""
+        for intent_class, examples in self.few_shot_examples.items():
+            examples_text += f"\n{intent_class.upper()} EXAMPLES:\n"
+            for example in examples[:3]:  # Use top 3 examples per class
+                examples_text += f"- {example}\n"
+        
+        # Create classification prompt
+        classification_prompt = f"""
+You are an expert intent classification agent. Analyze the user query and determine which intent(s) it matches.
+
+AVAILABLE INTENTS AND EXAMPLES:
+{examples_text}
+
+CLASSIFICATION RULES:
+1. A query can match ONE OR MORE intents (multi-intent classification allowed)
+2. Return confidence scores for each matched intent (0.0 to 1.0)
+3. Only return intents with confidence >= 0.3
+4. Consider partial matches and implied intents
+5. Use EXACT intent names from the examples above (lowercase with underscores)
+
+USER QUERY: "{prompt}"
+
+Respond in this EXACT JSON format:
+{{
+    "matched_intents": [
+        {{
+            "intent": "recommendation_request",
+            "confidence": 0.85,
+            "reasoning": "brief explanation"
+        }},
+        {{
+            "intent": "customer_lookup",
+            "confidence": 0.70,
+            "reasoning": "brief explanation"
+        }}
+    ],
+    "primary_intent": "recommendation_request",
+    "multi_intent": true
+}}
+
+IMPORTANT: Use lowercase intent names with underscores exactly as shown in the examples section headers.
+"""
+        
+        try:
+            # Get LLM response
+            response = self.llm.invoke([{"role": "user", "content": classification_prompt}])
+            result_text = response.content.strip()
+            
+            # Parse JSON response
+            import json
+            import re
+            
+            # Extract JSON from response if wrapped in other text
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                result_json = json.loads(json_match.group())
+            else:
+                raise ValueError("No valid JSON found in response")
+            
+            # Process the results
+            matched_intents = result_json.get("matched_intents", [])
+            primary_intent = result_json.get("primary_intent")
+            is_multi_intent = result_json.get("multi_intent", False)
+            
+            # Create scores dictionary
+            all_scores = {intent: 0.0 for intent in self.intent_classes}
+            for match in matched_intents:
+                intent = match.get("intent")
+                confidence = match.get("confidence", 0.0)
+                if intent in all_scores:
+                    all_scores[intent] = confidence
+            
+            # Determine best intent if primary not specified or invalid
+            if not primary_intent or primary_intent not in self.intent_classes:
+                if matched_intents:
+                    # Get highest confidence intent
+                    best_match = max(matched_intents, key=lambda x: x.get("confidence", 0))
+                    primary_intent = best_match["intent"]
+                else:
+                    primary_intent = "general_question"
+            
+            # Ensure primary intent is valid
+            if primary_intent not in self.intent_classes:
+                primary_intent = "general_question"
+            
+            print(f"🎯 Agent Classification Results:")
+            print(f"  Primary Intent: {primary_intent}")
+            print(f"  Multi-Intent: {is_multi_intent}")
+            print(f"  Matched Intents: {[m['intent'] for m in matched_intents]}")
+            print(f"  All Scores: {all_scores}")
+            
+            return {
+                "intent": primary_intent,
+                "confidence": all_scores.get(primary_intent, 0.0),
+                "all_scores": all_scores,
+                "matched_intents": matched_intents,
+                "multi_intent": is_multi_intent
+            }
+            
+        except Exception as e:
+            print(f"❌ Agent classification error: {e}")
+            # Fallback to general_question
+            return {
+                "intent": "general_question",
+                "confidence": 0.5,
+                "all_scores": {intent: 0.0 for intent in self.intent_classes},
+                "matched_intents": [{"intent": "general_question", "confidence": 0.5, "reasoning": "fallback"}],
+                "multi_intent": False
+            }
+    
+    def extract_parameters(self, prompt: str, intent: str) -> Dict[str, Any]:
+        """Extract parameters using LLM agent with few-shot examples."""
+        if intent not in self.parameter_examples:
+            return {}
+        
+        examples = self.parameter_examples[intent]
+        if isinstance(examples, dict) and "examples" in examples:
+            examples = examples["examples"]
+        
+        # Build few-shot parameter examples
+        examples_text = ""
+        for example_prompt, example_params in examples[:3]:  # Use top 3 examples
+            examples_text += f"Query: '{example_prompt}' -> Parameters: {json.dumps(example_params)}\n"
+        
+        # Create parameter extraction prompt
+        extraction_prompt = f"""
+You are an expert parameter extraction agent. Extract structured parameters from the user query based on the intent and examples.
+
+INTENT: {intent}
+
+PARAMETER EXTRACTION EXAMPLES:
+{examples_text}
+
+USER QUERY: "{prompt}"
+
+Extract parameters following the same pattern as the examples. Return ONLY valid JSON with the extracted parameters.
+If no parameters can be extracted, return an empty JSON object {{}}.
+
+JSON Response:
+"""
+        
+        try:
+            # Get LLM response
+            response = self.llm.invoke([{"role": "user", "content": extraction_prompt}])
+            result_text = response.content.strip()
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
+            if json_match:
+                extracted_params = json.loads(json_match.group())
+                print(f"📋 Extracted Parameters for {intent}: {extracted_params}")
+                return extracted_params
+            else:
+                return {}
+                
+        except Exception as e:
+            print(f"❌ Parameter extraction error: {e}")
+            return {}
+    
+    def classify_and_extract(self, prompt: str) -> Dict[str, Any]:
+        """Main method to classify intent and extract parameters with multi-intent support."""
+        # First classify the intent(s)
+        classification = self.classify_intent(prompt)
+        primary_intent = classification["intent"]
+        matched_intents = classification.get("matched_intents", [])
+        is_multi_intent = classification.get("multi_intent", False)
+        
+        # Extract parameters for primary intent
+        parameters = self.extract_parameters(prompt, primary_intent)
+        
+        # If multi-intent, extract parameters for other intents too
+        multi_intent_params = {}
+        if is_multi_intent and len(matched_intents) > 1:
+            for match in matched_intents:
+                intent = match["intent"]
+                if intent != primary_intent:
+                    intent_params = self.extract_parameters(prompt, intent)
+                    if intent_params:  # Only add if parameters were found
+                        multi_intent_params[intent] = intent_params
+        
+        return {
+            "intent": primary_intent,
+            "confidence": classification["confidence"],
+            "parameters": parameters,
+            "all_intent_scores": classification["all_scores"],
+            "matched_intents": matched_intents,
+            "multi_intent": is_multi_intent,
+            "multi_intent_parameters": multi_intent_params
+        }
 
 # Enhanced conversation state with kernel tracking
 class ConversationState(TypedDict):
@@ -70,7 +368,10 @@ class RecommendationChatbot:
                 max_tokens=1024,
                 groq_api_key=api_key
             )
-            
+
+            self.prompt_router = AgentPromptClassifier(FEW_SHOT_EXAMPLES, PARAMETER_EXAMPLES, self.llm)
+            print("🎯 Agent-based prompt router initialized")
+
             # Initialize recommendation tools
             self._init_recommendation_tools()
             
@@ -166,29 +467,50 @@ class RecommendationChatbot:
     # ==================== ROUTING DECISION FUNCTION ====================
 
     def _route_decision(self, state: ConversationState) -> str:
-        """Make routing decisions based on conversation stage."""
+        """Enhanced routing decisions with multi-intent support."""
         try:
-            stage = state.get("conversation_stage", "general_question")
+            extracted_info = state.get("extracted_info", {})
+            primary_intent = extracted_info.get("target", "general_question")
+            confidence = extracted_info.get("confidence", 0.0)
+            matched_intents = extracted_info.get("matched_intents", [])
+            is_multi_intent = extracted_info.get("multi_intent", False)
             
-            self._log_kernel_operation(state, "routing_decision", {"stage": stage})
+            self._log_kernel_operation(state, "routing_decision", {
+                "primary_intent": primary_intent,
+                "confidence": confidence,
+                "multi_intent": is_multi_intent,
+                "matched_intents": [m.get("intent") for m in matched_intents]
+            })
             
-            # Map stages to routes
-            stage_route_map = {
-                "greeting": "greeting",
-                "customer_lookup": "customer_lookup", 
-                "recommendation_request": "recommendation_request",
-                "product_inquiry": "product_inquiry",
-                "general_question": "general_question"
+            # Store multi-intent info for potential sequential processing
+            if is_multi_intent and len(matched_intents) > 1:
+                state["multi_intent_queue"] = [
+                    match["intent"] for match in matched_intents 
+                    if match["intent"] != primary_intent and match.get("confidence", 0) >= 0.4
+                ]
+            
+            # Map intents to node names
+            intent_node_map = {
+                "greeting": "handle_greeting",
+                "customer_lookup": "handle_customer_lookup",
+                "recommendation_request": "handle_recommendation",
+                "product_inquiry": "handle_product_inquiry",
+                "general_question": "handle_general_question",
+                "parameter_missing": "handle_parameter_missing"
             }
             
-            route = stage_route_map.get(stage, "general_question")
+            route = intent_node_map.get(primary_intent, "handle_general_question")
             
-            self._log_kernel_operation(state, "route_selected", {"route": route})
+            self._log_kernel_operation(state, "route_selected", {
+                "route": route,
+                "is_multi_intent": is_multi_intent
+            })
             
             return route
+            
         except Exception as e:
             print(f"⚠️ Error in route decision: {e}")
-            return "general_question"
+            return "handle_general_question"
 
     # ==================== HELPER FUNCTIONS ====================
 
@@ -268,14 +590,19 @@ class RecommendationChatbot:
                 p.StockCode, 
                 p.Description, 
                 p.Description_Categorize,
-                COUNT(t.InvoiceNo) as transaction_count,
-                SUM(t.Quantity) as total_quantity_sold,
-                AVG(t.UnitPrice) as avg_price,
-                GROUP_CONCAT(DISTINCT t.CustomerID_id) as customer_ids
+                t.CustomerID_id as customer_id,
+                c.Country,
+                c.District,
+                c.Segment,
+                COUNT(t.InvoiceNo) as transactions_per_customer,
+                SUM(t.Quantity) as total_quantity_by_customer,
+                AVG(t.UnitPrice) as avg_price_for_customer
             FROM recommendations_dim_products p
-            LEFT JOIN recommendations_fact_transactions t ON p.StockCode = t.StockCode_id
+            INNER JOIN recommendations_fact_transactions t ON p.StockCode = t.StockCode_id
+            INNER JOIN recommendations_dim_customers c ON t.CustomerID_id = c.CustomerID
             WHERE p.StockCode LIKE ?
-            GROUP BY p.StockCode, p.Description, p.Description_Categorize
+            GROUP BY p.StockCode, p.Description, p.Description_Categorize, t.CustomerID_id, c.Country, c.District, c.Segment
+            ORDER BY p.StockCode, t.CustomerID_id
             """
             results = self._execute_db_query(stock_code_query, (f"%{product_query}%",))
             
@@ -778,7 +1105,7 @@ class RecommendationChatbot:
             }
 
     def _create_graph(self) -> StateGraph:
-        """Create the LangGraph conversation flow with proper routing."""
+        """Create the LangGraph conversation flow with enhanced prompt target routing."""
         try:
             # Define the graph
             workflow = StateGraph(ConversationState)
@@ -790,7 +1117,8 @@ class RecommendationChatbot:
             workflow.add_node("handle_recommendation", self._handle_recommendation_node)
             workflow.add_node("handle_product_inquiry", self._handle_product_inquiry_node)
             workflow.add_node("handle_general_question", self._handle_general_question_node)
-            workflow.add_node("final_generation", self._final_generation_node)  # RAG-based final agent
+            workflow.add_node("handle_parameter_missing", self._handle_parameter_missing_node)  # New node
+            workflow.add_node("final_generation", self._final_generation_node)
             
             # Define the conversation flow
             workflow.set_entry_point("route_query")
@@ -800,11 +1128,12 @@ class RecommendationChatbot:
                 "route_query",
                 self._route_decision,
                 {
-                    "greeting": "handle_greeting",
-                    "customer_lookup": "handle_customer_lookup",
-                    "recommendation_request": "handle_recommendation",
-                    "product_inquiry": "handle_product_inquiry",
-                    "general_question": "handle_general_question",
+                    "handle_greeting": "handle_greeting",
+                    "handle_customer_lookup": "handle_customer_lookup",
+                    "handle_recommendation": "handle_recommendation",
+                    "handle_product_inquiry": "handle_product_inquiry",
+                    "handle_general_question": "handle_general_question",
+                    "handle_parameter_missing": "handle_parameter_missing",  # New route
                     "end": END
                 }
             )
@@ -815,6 +1144,7 @@ class RecommendationChatbot:
             workflow.add_edge("handle_recommendation", "final_generation")
             workflow.add_edge("handle_product_inquiry", "final_generation")
             workflow.add_edge("handle_general_question", "final_generation")
+            workflow.add_edge("handle_parameter_missing", "final_generation")  # New edge
             
             # Final generation flows to END
             workflow.add_edge("final_generation", END)
@@ -828,9 +1158,9 @@ class RecommendationChatbot:
     # ==================== NODE IMPLEMENTATIONS ====================
 
     def _route_query_node(self, state: ConversationState) -> ConversationState:
-        """Route queries to appropriate handlers with detailed kernel tracking."""
+        """Enhanced route query node using agent-based classification."""
         try:
-            self._log_kernel_operation(state, "query_routing_start", {"stage": state.get("conversation_stage", "unknown")})
+            self._log_kernel_operation(state, "agent_classification_start", {})
             
             # Initialize route history if not exists
             if "route_history" not in state:
@@ -843,60 +1173,130 @@ class RecommendationChatbot:
                 state["conversation_stage"] = "general_question"
                 return state
 
-            last_message = user_messages[-1].content.lower()
+            last_message = user_messages[-1].content
             
-            # Simple pattern matching for routing
-            intent = "general_question"  # default
-            confidence = 0.5
+            # DEBUG: Print the message being classified
+            print(f"\n🤖 AGENT CLASSIFYING MESSAGE: '{last_message}'")
             
-            # Greeting patterns
-            if any(pattern in last_message for pattern in ["hi", "hello", "hey", "good morning", "good afternoon"]):
-                intent = "greeting"
-                confidence = 0.9
+            # Use agent-based classifier
+            routing_result = self.prompt_router.classify_and_extract(last_message)
             
-            # Customer lookup patterns
-            elif any(pattern in last_message for pattern in ["customer", "lookup", "history", "purchases", "segment", "behavior", "bought"]):
-                intent = "customer_lookup"
-                confidence = 0.8
+            primary_intent = routing_result["intent"]
+            confidence = routing_result["confidence"]
+            extracted_params = routing_result["parameters"]
+            matched_intents = routing_result.get("matched_intents", [])
+            is_multi_intent = routing_result.get("multi_intent", False)
+            multi_intent_params = routing_result.get("multi_intent_parameters", {})
             
-            # Recommendation patterns
-            elif any(pattern in last_message for pattern in ["recommend", "suggest", "what should", "need", "want", "looking for"]):
-                intent = "recommendation_request"
-                confidence = 0.8
+            # DEBUG: Print classification results
+            print(f"🎯 AGENT CLASSIFICATION RESULT:")
+            print(f"  Primary Intent: {primary_intent}")
+            print(f"  Confidence: {confidence:.3f}")
+            print(f"  Parameters: {extracted_params}")
+            print(f"  Multi-Intent: {is_multi_intent}")
+            if is_multi_intent:
+                print(f"  All Matched Intents: {[m.get('intent') for m in matched_intents]}")
+                print(f"  Multi-Intent Params: {multi_intent_params}")
             
-            # Product inquiry patterns
-            elif any(pattern in last_message for pattern in ["product", "item", "stock code", "price", "details", "about"]):
-                intent = "product_inquiry"
-                confidence = 0.7
-            
-            # Help patterns
-            elif any(pattern in last_message for pattern in ["help", "what can", "how do", "explain"]):
-                intent = "general_question"
-                confidence = 0.8
-            
-            # Store routing decision
-            state["extracted_info"] = {
-                "intent": intent,
-                "confidence": confidence,
-                "original_query": user_messages[-1].content,
-                "timestamp": pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S')
+            # Map intent names to target names for compatibility
+            intent_target_map = {
+                "greeting": "greeting",
+                "customer_lookup": "customer_lookup", 
+                "recommendation_request": "recommendation_request",
+                "product_inquiry": "product_inquiry",
+                "general_question": "general_question"
             }
             
-            state["conversation_stage"] = intent
-            state["route_history"].append(f"{intent} (confidence: {confidence:.2f})")
+            mapped_target = intent_target_map.get(primary_intent, "general_question")
             
-            self._log_kernel_operation(state, "query_routed", {
-                "intent": intent, 
+            # Store routing information with multi-intent support
+            state["extracted_info"] = {
+                "target": mapped_target,
                 "confidence": confidence,
-                "route_count": len(state["route_history"])
+                "extracted_parameters": extracted_params,
+                "original_query": last_message,
+                "timestamp": pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S'),
+                # NEW: Multi-intent support
+                "matched_intents": matched_intents,
+                "multi_intent": is_multi_intent,
+                "multi_intent_parameters": multi_intent_params
+            }
+            
+            # Update conversation stage and context
+            state["conversation_stage"] = mapped_target
+            state["context"].update(extracted_params)
+            
+            # Add multi-intent parameters to context
+            if multi_intent_params:
+                state["context"]["multi_intent_params"] = multi_intent_params
+            
+            state["route_history"].append(f"{mapped_target}")
+            if is_multi_intent:
+                state["route_history"].append(f"multi_intent({len(matched_intents)})")
+            
+            self._log_kernel_operation(state, "agent_classification_complete", {
+                "primary_target": mapped_target,
+                "confidence": confidence,
+                "extracted_params": list(extracted_params.keys()),
+                "route_count": len(state["route_history"]),
+                "is_multi_intent": is_multi_intent,
+                "matched_intents_count": len(matched_intents)
             })
             
             return state
             
         except Exception as e:
-            self._log_kernel_operation(state, "routing_error", {"error": str(e)})
+            print(f"❌ AGENT CLASSIFICATION ERROR: {e}")
+            self._log_kernel_operation(state, "agent_classification_error", {"error": str(e)})
             state["conversation_stage"] = "general_question"
             return state
+        
+    def _handle_parameter_missing_node(self, state: ConversationState) -> ConversationState:
+        """Handle cases where required parameters are missing."""
+        try:
+            self._log_kernel_operation(state, "parameter_missing_handling", {})
+            
+            parameter_issues = state.get("parameter_issues", {})
+            missing_params = parameter_issues.get("missing_parameters", [])
+            target_config = parameter_issues.get("target_config", {})
+            
+            # Create helpful prompt for missing parameters
+            param_descriptions = {}
+            for param in target_config.get("parameters", []):
+                if param["name"] in missing_params:
+                    param_descriptions[param["name"]] = param["description"]
+            
+            # Store intermediate response for RAG
+            intermediate_response = f"""
+    PARAMETER_MISSING_CONTEXT: Required parameters are missing for the requested action.
+    TARGET_NAME: {target_config.get('name', 'unknown')}
+    TARGET_DESCRIPTION: {target_config.get('description', '')}
+    MISSING_PARAMETERS: {missing_params}
+    PARAMETER_DESCRIPTIONS: {param_descriptions}
+    RESPONSE_NEEDED: Ask user to provide the missing required information in a helpful way.
+            """
+            
+            if "intermediate_responses" not in state:
+                state["intermediate_responses"] = []
+            state["intermediate_responses"].append(intermediate_response)
+            
+            # Set context for final generation
+            state["final_context"] = {
+                "interaction_type": "parameter_missing",
+                "missing_parameters": missing_params,
+                "parameter_descriptions": param_descriptions,
+                "target_name": target_config.get("name"),
+                "target_description": target_config.get("description")
+            }
+            
+            self._log_kernel_operation(state, "parameter_missing_processed", {
+                "missing_count": len(missing_params)
+            })
+            
+        except Exception as e:
+            self._log_kernel_operation(state, "parameter_missing_error", {"error": str(e)})
+        
+        return state
 
     def _handle_greeting_node(self, state: ConversationState) -> ConversationState:
         """Handle greeting messages."""
@@ -941,34 +1341,38 @@ TONE: Should be friendly, welcoming, and informative.
         return state
 
     def _handle_customer_lookup_node(self, state: ConversationState) -> ConversationState:
-        """Handle customer lookup queries."""
+        """Enhanced customer lookup with extracted parameters."""
         try:
             self._log_kernel_operation(state, "customer_lookup_start", {})
+            
+            extracted_info = state.get("extracted_info", {})
+            extracted_params = extracted_info.get("extracted_parameters", {})
             
             user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
             original_query = user_messages[-1].content if user_messages else ""
             
-            # Extract customer ID
-            context = self._extract_context_from_messages(state)
-            user_id = None
+            # Use extracted customer_id if available
+            user_id = extracted_params.get("customer_id")
+            lookup_type = extracted_params.get("lookup_type", "all")
             
-            user_id_match = re.search(r'\b(\d{5,})\b', original_query)
-            if user_id_match:
-                user_id = int(user_id_match.group(1))
-            elif context.get("last_customer_id"):
-                user_id = context["last_customer_id"]
+            # Fallback to context extraction if no parameters extracted
+            if not user_id:
+                context = self._extract_context_from_messages(state)
+                user_id = context.get("last_customer_id")
             
             if user_id:
                 # Get customer data
                 customer_data = self._get_comprehensive_customer_data(user_id)
                 
                 if customer_data.get("customer_info"):
-                    # Store intermediate response for RAG
+                    # Store intermediate response for RAG with lookup type
                     intermediate_response = f"""
-CUSTOMER_LOOKUP_CONTEXT: User requested information about customer {user_id}.
-CUSTOMER_DATA: {json.dumps(customer_data, indent=2)}
-QUERY_TYPE: {original_query}
-RESPONSE_NEEDED: Provide relevant customer information based on the specific query asked.
+    CUSTOMER_LOOKUP_CONTEXT: User requested {lookup_type} information about customer {user_id}.
+    CUSTOMER_DATA: {json.dumps(customer_data, indent=2)}
+    LOOKUP_TYPE: {lookup_type}
+    EXTRACTED_PARAMETERS: {extracted_params}
+    QUERY_TYPE: {original_query}
+    RESPONSE_NEEDED: Provide relevant customer information based on lookup type and query.
                     """
                     
                     if "intermediate_responses" not in state:
@@ -980,16 +1384,21 @@ RESPONSE_NEEDED: Provide relevant customer information based on the specific que
                         "interaction_type": "customer_lookup",
                         "customer_id": user_id,
                         "customer_data": customer_data,
+                        "lookup_type": lookup_type,
                         "original_query": original_query,
+                        "extracted_parameters": extracted_params,
                         "has_data": True
                     }
                     
-                    self._log_kernel_operation(state, "customer_data_found", {"customer_id": user_id})
+                    self._log_kernel_operation(state, "customer_data_found", {
+                        "customer_id": user_id,
+                        "lookup_type": lookup_type
+                    })
                 else:
-                    # Customer not found
+                    # Customer not found - same as before
                     intermediate_response = f"""
-CUSTOMER_LOOKUP_CONTEXT: Customer {user_id} not found in database.
-RESPONSE_NEEDED: Inform user that customer ID was not found and suggest checking the ID.
+    CUSTOMER_LOOKUP_CONTEXT: Customer {user_id} not found in database.
+    RESPONSE_NEEDED: Inform user that customer ID was not found and suggest checking the ID.
                     """
                     
                     if "intermediate_responses" not in state:
@@ -1005,10 +1414,10 @@ RESPONSE_NEEDED: Inform user that customer ID was not found and suggest checking
                     
                     self._log_kernel_operation(state, "customer_not_found", {"customer_id": user_id})
             else:
-                # No customer ID provided
+                # No customer ID provided - same as before
                 intermediate_response = """
-CUSTOMER_LOOKUP_CONTEXT: User requested customer information but no valid customer ID was provided.
-RESPONSE_NEEDED: Ask user to provide a customer ID for lookup.
+    CUSTOMER_LOOKUP_CONTEXT: User requested customer information but no valid customer ID was provided.
+    RESPONSE_NEEDED: Ask user to provide a customer ID for lookup.
                 """
                 
                 if "intermediate_responses" not in state:
@@ -1029,135 +1438,211 @@ RESPONSE_NEEDED: Ask user to provide a customer ID for lookup.
         return state
 
     def _handle_recommendation_node(self, state: ConversationState) -> ConversationState:
-        """Handle recommendation requests."""
+        """Enhanced recommendation handling with product similarity support."""
         try:
             self._log_kernel_operation(state, "recommendation_start", {})
+            
+            extracted_info = state.get("extracted_info", {})
+            extracted_params = extracted_info.get("extracted_parameters", {})
             
             user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
             original_query = user_messages[-1].content if user_messages else ""
             
-            # Get customer ID
-            context = self._extract_context_from_messages(state)
-            user_id = state.get("user_id")
-            if not user_id:
-                user_id_match = re.search(r'\b(\d{5,})\b', original_query)
-                if user_id_match:
-                    user_id = int(user_id_match.group(1))
-                elif context.get("last_customer_id"):
-                    user_id = context["last_customer_id"]
+            # Get customer ID or similar product
+            user_id = extracted_params.get("customer_id")
+            similar_to_product = extracted_params.get("similar_to_product")
+            recommendation_count = extracted_params.get("recommendation_count", 5)
             
-            if user_id and self.df_data is not None:
-                # Check if customer exists
+            # Fallback to context extraction for customer ID
+            if not user_id and not similar_to_product:
+                context = self._extract_context_from_messages(state)
+                user_id = context.get("last_customer_id")
+            
+            recommendations = []
+            recommendation_type = "general"
+            
+            if similar_to_product:
+                # Handle product similarity recommendations
+                recommendations = self._get_similar_products(similar_to_product, recommendation_count)
+                recommendation_type = "product_similarity"
+                
+                self._log_kernel_operation(state, "similar_product_recommendations", {
+                    "product": similar_to_product,
+                    "count": len(recommendations)
+                })
+                
+            elif user_id and self.df_data is not None:
+                # Handle customer-based recommendations
                 if user_id in self.df_data["CustomerID"].unique():
-                    # Generate recommendations
                     recommendations = self._generate_recommendations_for_customer(user_id)
+                    recommendation_type = "customer_based"
                     
-                    # Store intermediate response for RAG
-                    intermediate_response = f"""
-RECOMMENDATION_CONTEXT: User requested product recommendations for customer {user_id}.
-ORIGINAL_QUERY: {original_query}
-RECOMMENDATIONS_DATA: {json.dumps(recommendations, indent=2)}
-CUSTOMER_ID: {user_id}
-RESPONSE_NEEDED: Present the recommendations in a user-friendly format with explanations.
-                    """
-                    
-                    if "intermediate_responses" not in state:
-                        state["intermediate_responses"] = []
-                    state["intermediate_responses"].append(intermediate_response)
-                    
-                    # Set context for final generation
-                    state["final_context"] = {
-                        "interaction_type": "recommendation",
-                        "customer_id": user_id,
-                        "recommendations": recommendations,
-                        "original_query": original_query,
-                        "has_recommendations": len(recommendations) > 0
-                    }
-                    
-                    state["last_recommendations"] = recommendations
-                    
-                    self._log_kernel_operation(state, "recommendations_generated", {
+                    self._log_kernel_operation(state, "customer_recommendations_generated", {
                         "customer_id": user_id,
                         "count": len(recommendations)
                     })
                 else:
                     # Customer not found
-                    intermediate_response = f"""
-RECOMMENDATION_CONTEXT: Customer {user_id} not found in database for recommendations.
-RESPONSE_NEEDED: Inform user that customer ID is invalid.
-                    """
-                    
-                    if "intermediate_responses" not in state:
-                        state["intermediate_responses"] = []
-                    state["intermediate_responses"].append(intermediate_response)
-                    
-                    state["final_context"] = {
-                        "interaction_type": "recommendation",
-                        "customer_id": user_id,
-                        "has_recommendations": False,
-                        "error": "customer_not_found"
-                    }
-                    
                     self._log_kernel_operation(state, "recommendation_customer_not_found", {"customer_id": user_id})
-            else:
-                # No customer ID or no data
-                intermediate_response = """
-RECOMMENDATION_CONTEXT: User requested recommendations but no valid customer ID provided or data unavailable.
-RESPONSE_NEEDED: Ask for customer ID to provide personalized recommendations.
+            
+            # Store intermediate response for RAG
+            if recommendations:
+                intermediate_response = f"""
+    RECOMMENDATION_CONTEXT: User requested {recommendation_type} recommendations.
+    ORIGINAL_QUERY: {original_query}
+    EXTRACTED_PARAMETERS: {extracted_params}
+    RECOMMENDATIONS_DATA: {json.dumps(recommendations, indent=2)}
+    RECOMMENDATION_TYPE: {recommendation_type}
+    {"CUSTOMER_ID: " + str(user_id) if user_id else ""}
+    {"SIMILAR_TO_PRODUCT: " + similar_to_product if similar_to_product else ""}
+    RESPONSE_NEEDED: Present the recommendations in a user-friendly format with explanations.
                 """
-                
-                if "intermediate_responses" not in state:
-                    state["intermediate_responses"] = []
-                state["intermediate_responses"].append(intermediate_response)
-                
-                state["final_context"] = {
-                    "interaction_type": "recommendation",
-                    "has_recommendations": False,
-                    "error": "no_customer_id_or_data"
-                }
-                
-                self._log_kernel_operation(state, "recommendation_missing_info", {"has_user_id": bool(user_id)})
+            else:
+                intermediate_response = f"""
+    RECOMMENDATION_CONTEXT: User requested recommendations but none could be generated.
+    ORIGINAL_QUERY: {original_query}
+    EXTRACTED_PARAMETERS: {extracted_params}
+    ERROR: No recommendations available - {"customer not found" if user_id else "no valid parameters"}
+    RESPONSE_NEEDED: Explain why no recommendations could be generated and ask for clarification.
+                """
+            
+            if "intermediate_responses" not in state:
+                state["intermediate_responses"] = []
+            state["intermediate_responses"].append(intermediate_response)
+            
+            # Set context for final generation
+            state["final_context"] = {
+                "interaction_type": "recommendation",
+                "customer_id": user_id,
+                "similar_to_product": similar_to_product,
+                "recommendations": recommendations,
+                "recommendation_type": recommendation_type,
+                "original_query": original_query,
+                "extracted_parameters": extracted_params,
+                "has_recommendations": len(recommendations) > 0
+            }
+            
+            state["last_recommendations"] = recommendations
             
         except Exception as e:
             self._log_kernel_operation(state, "recommendation_error", {"error": str(e)})
         
         return state
+    
+    def _get_similar_products(self, product_name: str, count: int = 5) -> List[Dict[str, Any]]:
+        """Get similar products using content-based filtering."""
+        try:
+            if self.df_data is None:
+                return []
+            
+            # Find the product in the dataframe
+            product_matches = self.df_data[
+                self.df_data["Description"].str.contains(product_name, case=False, na=False)
+            ]
+            
+            if product_matches.empty:
+                return []
+            
+            # Use the first match as reference
+            reference_product = product_matches.iloc[0]
+            reference_desc = reference_product["Description"]
+            
+            # Prepare vectors if not done
+            self._prepare_content_vectors()
+            
+            if self.tfidf_matrix is None:
+                return []
+            
+            # Find the index of the reference product
+            ref_index = reference_product.name
+            if ref_index >= len(self.tfidf_matrix.toarray()):
+                return []
+            
+            # Calculate similarities
+            ref_vector = self.tfidf_matrix[ref_index]
+            similarities = cosine_similarity(ref_vector, self.tfidf_matrix).flatten()
+            
+            # Get top similar products (excluding the reference)
+            similar_indices = similarities.argsort()[::-1]
+            
+            recommendations = []
+            seen_descriptions = {reference_desc}
+            
+            for idx in similar_indices:
+                if len(recommendations) >= count:
+                    break
+                
+                if idx == ref_index:
+                    continue
+                
+                try:
+                    product = self.df_data.iloc[idx]
+                    desc = product["Description"]
+                    
+                    if desc not in seen_descriptions:
+                        recommendations.append({
+                            "Stock Code": product["StockCode"],
+                            "Description": desc,
+                            "Unit Price": float(product["UnitPrice"])
+                        })
+                        seen_descriptions.add(desc)
+                except Exception:
+                    continue
+            
+            return recommendations
+            
+        except Exception as e:
+            print(f"❌ Error getting similar products: {e}")
+            return []
 
     def _handle_product_inquiry_node(self, state: ConversationState) -> ConversationState:
-        """Handle product inquiry requests."""
+        """Enhanced product inquiry handling with stock code analysis and customer lookup."""
         try:
             self._log_kernel_operation(state, "product_inquiry_start", {})
+            
+            extracted_info = state.get("extracted_info", {})
+            extracted_params = extracted_info.get("extracted_parameters", {})
             
             user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
             original_query = user_messages[-1].content if user_messages else ""
             
-            # Extract product references
-            product_refs = []
+            # Extract product references from parameters or fallback to manual extraction
+            stock_codes = extracted_params.get("stock_codes", [])
+            product_names = extracted_params.get("product_names", [])
+            inquiry_type = extracted_params.get("inquiry_type", "all")
             
-            # Look for stock codes
-            stock_codes = re.findall(r'\b[A-Z0-9]{5,8}\b', original_query.upper())
-            if stock_codes:
-                product_refs.extend(stock_codes)
+            # Manual extraction if parameters missed something
+            if not stock_codes:
+                manual_codes = re.findall(r'\b(\d{4,8}|[A-Z0-9]{4,8})\b', original_query)
+                stock_codes.extend(manual_codes)
             
-            # Look for quoted product names
-            quoted_products = re.findall(r'"([^"]+)"', original_query)
-            if quoted_products:
-                product_refs.extend(quoted_products)
+            if not product_names:
+                manual_names = re.findall(r'(?:"([^"]+)"|([A-Z][A-Z\s&]+[A-Z]))', original_query)
+                if manual_names:
+                    flattened_names = [name for group in manual_names for name in group if name]
+                    product_names.extend(flattened_names)
+            
+            product_refs = stock_codes + product_names
             
             if product_refs:
                 # Get product information
                 products_data = []
+                customers_data = []
+                
                 for ref in product_refs[:3]:  # Limit to 3 products
+                    # Get product details
                     products = self._get_product_info(ref)
                     products_data.extend(products)
                 
                 # Store intermediate response for RAG
                 intermediate_response = f"""
-PRODUCT_INQUIRY_CONTEXT: User asked about specific products.
-ORIGINAL_QUERY: {original_query}
-PRODUCT_REFERENCES: {product_refs}
-PRODUCTS_DATA: {json.dumps(products_data, indent=2)}
-RESPONSE_NEEDED: Present product information in a clear, detailed format.
+    PRODUCT_INQUIRY_CONTEXT: User asked about product details and analysis.
+    ORIGINAL_QUERY: {original_query}
+    PRODUCT_REFERENCES: {product_refs}
+    INQUIRY_TYPE: {inquiry_type}
+    PRODUCTS_DATA: {json.dumps(products_data, indent=2)}
+    CUSTOMERS_DATA: {json.dumps(customers_data, indent=2) if customers_data else "No customer data requested"}
+    RESPONSE_NEEDED: Present product information and customer analysis in a clear, detailed format.
                 """
                 
                 if "intermediate_responses" not in state:
@@ -1168,18 +1653,24 @@ RESPONSE_NEEDED: Present product information in a clear, detailed format.
                 state["final_context"] = {
                     "interaction_type": "product_inquiry",
                     "products_data": products_data,
+                    "customers_data": customers_data,
                     "product_references": product_refs,
+                    "inquiry_type": inquiry_type,
                     "original_query": original_query,
-                    "has_products": len(products_data) > 0
+                    "has_products": len(products_data) > 0,
+                    "has_customers": len(customers_data) > 0
                 }
                 
-                self._log_kernel_operation(state, "products_found", {"count": len(products_data)})
+                self._log_kernel_operation(state, "products_and_customers_found", {
+                    "products_count": len(products_data),
+                    "customers_count": len(customers_data)
+                })
             else:
                 # No products found
                 intermediate_response = f"""
-PRODUCT_INQUIRY_CONTEXT: User asked about products but no specific products could be identified.
-ORIGINAL_QUERY: {original_query}
-RESPONSE_NEEDED: Ask user to be more specific about which products they want information about.
+    PRODUCT_INQUIRY_CONTEXT: User asked about products but no specific products could be identified.
+    ORIGINAL_QUERY: {original_query}
+    RESPONSE_NEEDED: Ask user to be more specific about which products they want information about.
                 """
                 
                 if "intermediate_responses" not in state:
