@@ -7,17 +7,19 @@ Generates PNG and Mermaid diagrams of the recommendation chatbot workflow.
 import sys
 import os
 
+
 def visualize_langgraph():
     """Generate PNG and Mermaid visualizations of the LangGraph workflow."""
     
     # Add current directory to path
     sys.path.append('.')
+    api_key = os.getenv('GROQ_API_KEY')
     
     try:
         from src.chatbot.langgraph_chatbot import RecommendationChatbot
         
         print("🔧 Initializing recommendation chatbot...")
-        chatbot = RecommendationChatbot()
+        chatbot = RecommendationChatbot(api_key)
         
         print("📊 Extracting graph structure...")
         graph_def = chatbot.graph.get_graph()

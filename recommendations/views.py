@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
-
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
@@ -12,9 +11,18 @@ from django.views.decorators.http import require_http_methods
 from src.data.processor import DataProcessor
 from src.models.recommendations import weighted_hybrid_recommendations, CollaborativeFiltering
 from recommendations.models import Dim_Products  # Import Django model
+from recommendations.models import Dim_Customers
 from src.chatbot.langgraph_chatbot import RecommendationChatbot
 import os
-# from django.http import StreamingHttpResponse
+
+# Imports for plotting
+import matplotlib.pyplot as plt
+import pandas as pd
+import io
+import base64
+# Set Matplotlib backend to 'Agg' for non-interactive plotting
+plt.switch_backend('Agg')
+
 
 # Global variables to cache data
 _processor = None
@@ -173,6 +181,8 @@ def chatbot_view(request):
         data = json.loads(request.body)
         message = data.get('message', '')
         user_id = data.get('user_id', 'default_user')
+        chat_id = data.get('chat_id')
+        session_customer_id = request.session.get('customer_id')
         
         if not message.strip():
             return JsonResponse({
@@ -190,23 +200,27 @@ def chatbot_view(request):
             })
         
         # Get chatbot response
-        response = chatbot.chat(message, user_id)
+        response = chatbot.chat(message, chat_id=chat_id, user_id=user_id, session_customer_id=session_customer_id)
         
         return JsonResponse({
             'response': response,
-            'status': 'success'
+            'status': 'success',
+            'chat_id': chat_id,
+            'message_count': len(chatbot.get_chat_context(chat_id or 'default').get('messages', []))
         })
         
     except json.JSONDecodeError:
         return JsonResponse({
             'error': 'Invalid JSON data',
-            'status': 'error'
+            'status': 'error',
+            'chat_id': chat_id
         }, status=400)
     except Exception as e:
         print(f"❌ Chatbot error: {e}")
         return JsonResponse({
             'response': 'I encountered an unexpected error. Please try again or use the AI Recommendations tab.',
-            'status': 'error'
+            'status': 'error',
+            'chat_id': data.get('chat_id') if 'data' in locals() else None
         })
 
 def health_check(request):
@@ -468,5 +482,266 @@ def index(request):
     
     # GET request - show empty form with product dropdown
     return render(request, 'recommendations/index.html', {
-        'available_products': available_products
+        'available_products': available_products,
+        'customer_id': customer_id # Pass customer_id to index.html for dashboard link
+    })
+
+
+def customer_dashboard_view(request):
+    """
+    Displays a modern dashboard for a specific customer, including purchase history,
+    top products, and customer information with updated styling.
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib import font_manager
+    import seaborn as sns
+    import numpy as np
+    
+    customer_id = request.session.get('customer_id')
+
+    if not customer_id:
+        return redirect('recommendations:login') 
+
+    processor, df_clean = get_processor_and_data()
+
+    if df_clean is None:
+        return render(request, 'recommendations/customer_dashboard.html', {
+            'error': 'Failed to load data for dashboard.',
+            'customer_id': customer_id
+        })
+
+    # Ensure 'CustomerID' column is of the same type (int) for comparison
+    customer_df = df_clean[df_clean["CustomerID"] == customer_id].copy() 
+
+    if customer_df.empty:
+        return render(request, 'recommendations/customer_dashboard.html', {
+            'error': f'Customer ID {customer_id} not found in transaction data.',
+            'customer_id': customer_id
+        })
+
+    # Ensure 'TotalPrice' column exists or is derived
+    if 'TotalPrice' not in customer_df.columns:
+        customer_df['TotalPrice'] = customer_df['Quantity'] * customer_df['UnitPrice']
+
+    # Placeholder for 'segment' if not already in df_clean
+    if 'segment' not in customer_df.columns:
+        customer_df['segment'] = 'Regular'
+
+    # Calculate segment and customer metrics for context
+    customer_obj = Dim_Customers.objects.get(CustomerID=customer_id)
+    segment = customer_obj.Segment
+    total_spend = customer_df["TotalPrice"].sum() if not customer_df.empty else 0.0
+    total_orders = customer_df["InvoiceNo"].nunique() if not customer_df.empty else 0
+    avg_order_value = total_spend / total_orders if total_orders > 0 else 0
+    first_purchase = customer_df["InvoiceDate"].min().strftime("%b %d, %Y") if not customer_df["InvoiceDate"].empty else 'N/A'
+    last_purchase = customer_df["InvoiceDate"].max().strftime("%b %d, %Y") if not customer_df["InvoiceDate"].empty else 'N/A'
+    unique_products = customer_df["Description"].nunique() if not customer_df.empty else 0
+
+    # Modern color palette matching UI
+    colors = {
+        'primary': '#667eea',      # Purple-blue gradient start
+        'secondary': '#764ba2',    # Purple gradient end
+        'accent': '#ff6b35',       # Modern orange
+        'background': '#f8f9fa',   # Light background
+        'text': '#2c3e50',         # Dark text
+        'grid': '#e9ecef',         # Light grid
+        'success': '#28a745',      # Green
+        'gradient_colors': ['#667eea', '#7c6eea', '#926eea', '#a76eea', '#bd6eea', '#d36eea', '#e96eea']
+    }
+
+    # Generate modern plots
+    plot_data = {}
+    try:
+        # Set modern style
+        plt.style.use('seaborn-v0_8-whitegrid')
+        
+        # Try to use Inter font (fallback to system fonts if not available)
+        try:
+            plt.rcParams['font.family'] = [ 'Arial', 'DejaVu Sans']
+        except:
+            plt.rcParams['font.family'] = ['Arial', 'DejaVu Sans']
+            
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['axes.titlesize'] = 12
+        plt.rcParams['axes.labelsize'] = 10
+        plt.rcParams['xtick.labelsize'] = 9
+        plt.rcParams['ytick.labelsize'] = 9
+        
+        fig, axs = plt.subplots(2, 2, figsize=(16, 10))
+        fig.patch.set_facecolor('white')
+        
+        # Remove top and right spines for cleaner look
+        for ax in axs.flat:
+            ax.set_facecolor('white')
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color(colors['grid'])
+            ax.spines['bottom'].set_color(colors['grid'])
+            ax.tick_params(colors=colors['text'], which='both')
+            ax.grid(True, alpha=0.3, color=colors['grid'])
+
+        # 1️⃣ Purchases Over Time - Modern Line Chart
+        customer_df["InvoiceDate"] = pd.to_datetime(customer_df["InvoiceDate"])
+        if not customer_df.empty:
+            # Create daily spending data
+            daily_spending = customer_df.set_index("InvoiceDate").resample('D')["TotalPrice"].sum()
+            daily_spending = daily_spending[daily_spending > 0]  # Remove zero days
+            
+            # Plot with gradient-like effect
+            line = axs[0,0].plot(daily_spending.index, daily_spending.values, 
+                               color=colors['primary'], linewidth=3, alpha=0.8, 
+                               marker='o', markersize=6, markerfacecolor=colors['accent'],
+                               markeredgecolor='white', markeredgewidth=2)
+            
+            # Fill area under curve with gradient effect
+            axs[0,0].fill_between(daily_spending.index, daily_spending.values, 
+                                alpha=0.2, color=colors['primary'])
+            
+        axs[0,0].set_title("Purchase Trends Over Time", fontweight='bold', 
+                          color=colors['text'], pad=20, fontsize=14)
+        # axs[0,0].set_xlabel("Date", color=colors['text'], fontweight='600')
+        axs[0,0].set_ylabel("Daily Spending ($)", color=colors['text'], fontweight='600')
+        axs[0,0].xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+        axs[0,0].tick_params(axis='x', rotation=45)
+
+        # 2️⃣ Top Products - Modern Horizontal Bar Chart
+        if not customer_df.empty:
+            top_products = customer_df.groupby("Description")["Quantity"].sum().sort_values(ascending=True).tail(7)
+            
+            # Create gradient colors
+            n_bars = len(top_products)
+            gradient_colors = [colors['primary'] if i % 2 == 0 else colors['accent'] 
+                             for i in range(n_bars)]
+            
+            bars = axs[0,1].barh(range(len(top_products)), top_products.values, 
+                               color=gradient_colors, alpha=0.8, height=0.6)
+            
+            # Add value labels on bars
+            for i, (bar, value) in enumerate(zip(bars, top_products.values)):
+                axs[0,1].text(value + max(top_products.values) * 0.01, bar.get_y() + bar.get_height()/2, 
+                            f'{int(value)}', va='center', ha='left', fontweight='600', 
+                            color=colors['text'], fontsize=9)
+            
+            axs[0,1].set_yticks(range(len(top_products)))
+            axs[0,1].set_yticklabels([desc[:25] + '...' if len(desc) > 25 else desc 
+                                    for desc in top_products.index], fontsize=9)
+            
+        axs[0,1].set_title("Most Purchased Products", fontweight='bold', 
+                          color=colors['text'], pad=20, fontsize=14)
+        axs[0,1].set_xlabel("Quantity Purchased", color=colors['text'], fontweight='600')
+
+        # 3️⃣ Monthly Purchase Frequency - 3D-like Pie Chart with Quantities
+        if not customer_df.empty:
+            monthly_purchases = customer_df.groupby(customer_df["InvoiceDate"].dt.to_period('M')).size()
+
+            if len(monthly_purchases) > 0:
+                # Alternate colors: primary / secondary
+                pie_colors = [colors['primary'] if i % 2 == 0 else colors['secondary'] 
+                            for i in range(len(monthly_purchases))]
+
+                # Show actual values instead of %
+                def make_autopct(values):
+                    def my_autopct(pct):
+                        total = sum(values)
+                        val = int(round(pct*total/100.0))
+                        return f"{val}"   # show raw value
+                    return my_autopct
+
+                wedges, texts, autotexts = axs[1,0].pie(
+                    monthly_purchases.values,
+                    labels=[str(period) for period in monthly_purchases.index],
+                    autopct=make_autopct(monthly_purchases.values),
+                    startangle=140,
+                    colors=pie_colors,
+                    shadow=True,       # gives "3D shadow" effect
+                    explode=[0.05]*len(monthly_purchases),  # pop-out for 3D look
+                    textprops={'color': colors['text'], 'fontsize': 9, 'fontweight': '600'}
+                )
+
+                # Style quantity labels inside pie
+                for autotext in autotexts:
+                    autotext.set_color("white")
+                    autotext.set_fontweight("bold")
+                    autotext.set_fontsize(9)
+
+        axs[1,0].set_title("Monthly Purchase Frequency", fontweight='bold', 
+                        color=colors['text'], pad=20, fontsize=14)
+
+
+
+        # 4️⃣ Customer Info Card - Modern Table Design (UPDATED: Table format)
+        axs[1,1].axis("off")
+        
+        # Create table data
+        table_data = [
+            ['Segment', segment],
+            ['Total Spending', f'${total_spend:,.2f}'],
+            ['Total Orders', f'{total_orders:,}'],
+            ['Avg Order Value', f'${avg_order_value:.2f}'],
+            ['Unique Products', f'{unique_products:,}'],
+            ['First Purchase', first_purchase],
+            ['Latest Purchase', last_purchase]
+        ]
+        
+        # Create table
+        table = axs[1,1].table(cellText=table_data,
+                              colLabels=['Metric', 'Value'],
+                              cellLoc='left',
+                              loc='center',
+                              colWidths=[0.4, 0.6])
+        
+        # Style the table
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 2)
+        
+        # Style header row
+        for i in range(2):
+            table[(0, i)].set_facecolor(colors['primary'])
+            table[(0, i)].set_text_props(weight='bold', color='white')
+            table[(0, i)].set_height(0.08)
+        
+        # Style data rows
+        for i in range(1, len(table_data) + 1):
+            for j in range(2):
+                if i % 2 == 0:
+                    table[(i, j)].set_facecolor(colors['background'])
+                else:
+                    table[(i, j)].set_facecolor('white')
+                table[(i, j)].set_text_props(color=colors['text'])
+                table[(i, j)].set_height(0.06)
+        
+        # Remove table borders for cleaner look
+        for (row, col), cell in table.get_celld().items():
+            cell.set_linewidth(0.5)
+            cell.set_edgecolor(colors['grid'])
+
+        axs[1,1].set_title("Customer Overview", fontweight='bold', 
+                          color=colors['text'], pad=20, fontsize=14)
+
+        # Adjust layout with better spacing
+        plt.tight_layout(pad=3.0)
+        
+        # Adjust subplot spacing for better visual balance
+        plt.subplots_adjust(hspace=0.3, wspace=0.3)
+
+        # Save plot with high quality
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', dpi=150, 
+                   facecolor='white', edgecolor='none')
+        buffer.seek(0)
+        plot_data['dashboard_image'] = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        plt.close(fig)
+
+    except Exception as e:
+        print(f"Error generating modern dashboard plots for customer {customer_id}: {e}")
+        plot_data['error'] = f"Error generating dashboard: {e}"
+
+    # Return context with segment for header replacement
+    return render(request, 'recommendations/customer_dashboard.html', {
+        'customer_id': customer_id,
+        'customer_segment': segment,  # Added for template usage
+        'dashboard_image': plot_data.get('dashboard_image'),
+        'error': plot_data.get('error')
     })

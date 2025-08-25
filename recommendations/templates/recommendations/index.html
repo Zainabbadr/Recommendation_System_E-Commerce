@@ -9,7 +9,7 @@
     }
 
     body {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Arial', -apple-system, BlinkMacSystemFont, sans-serif;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         min-height: 100vh;
     }
@@ -207,6 +207,41 @@
         height: 1rem;
     }
 
+    /* Typing dots animation */
+    .typing-dots {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .typing-dots span {
+        height: 8px;
+        width: 8px;
+        background-color: #6c757d;
+        border-radius: 50%;
+        display: inline-block;
+        margin: 0 2px;
+        animation: typing 1.4s infinite ease-in-out;
+    }
+
+    .typing-dots span:nth-child(1) {
+        animation-delay: -0.32s;
+    }
+
+    .typing-dots span:nth-child(2) {
+        animation-delay: -0.16s;
+    }
+
+    @keyframes typing {
+        0%, 80%, 100% {
+            transform: scale(0.8);
+            opacity: 0.5;
+        }
+        40% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
     /* Interactive Elements */
     .example-query {
         cursor: pointer;
@@ -248,9 +283,407 @@
     .tab-content {
         animation: slideIn 0.5s ease;
     }
+
+    /*  Chat History Sidebar */
+
+/* Chat History Sidebar */
+.chat-history-sidebar {
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(20px);
+    border-radius: 16px;
+    padding: 0;
+    height: 600px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.chat-history-sidebar.collapsed {
+    width: 50px;
+    min-width: 50px;
+}
+
+.sidebar-toggle-btn {
+    position: absolute;
+    top: 10px;
+    right: -15px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.sidebar-toggle-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.chat-history-sidebar.collapsed .sidebar-toggle-btn i {
+    transform: rotate(180deg);
+}
+
+.sidebar-content {
+    padding: 1rem;
+    transition: opacity 0.3s ease;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-history-sidebar.collapsed .sidebar-content {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.chat-history-header {
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+}
+
+.chat-history-header h5 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.chat-count-badge {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.chat-search {
+    margin-bottom: 1rem;
+}
+
+.new-chat-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.new-chat-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.chat-management-options {
+    padding: 0.5rem 0;
+    border-top: 1px solid #f1f3f4;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chat-item {
+    background: rgba(248, 249, 250, 0.8);
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.chat-item:hover {
+    background: rgba(102, 126, 234, 0.1);
+    border-color: #667eea;
+    transform: translateX(2px);
+}
+
+.chat-item.active {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.chat-item.active::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 70%;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-radius: 0 4px 4px 0;
+}
+
+.chat-name {
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.chat-preview {
+    font-size: 0.8rem;
+    color: #6c757d;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.chat-date {
+    font-size: 0.7rem;
+    color: #adb5bd;
+    margin-top: 0.25rem;
+    display: flex;
+    align-items: center;
+}
+
+.chat-date i {
+    margin-right: 4px;
+    font-size: 0.6rem;
+}
+
+#chat-history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 5px;
+}
+
+#chat-history-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#chat-history-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#chat-history-list::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+#chat-history-list::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.chat-delete-btn {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: none;
+    border: none;
+    color: #dc3545;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+}
+
+.chat-item:hover .chat-delete-btn {
+    opacity: 1;
+}
+
+.chat-delete-btn:hover {
+    background: rgba(220, 53, 69, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .chat-history-sidebar {
+        position: fixed;
+        left: -300px;
+        top: 0;
+        height: 100vh;
+        width: 300px;
+        z-index: 1000;
+        transition: left 0.3s ease;
+    }
+    
+    .chat-history-sidebar.mobile-open {
+        left: 0;
+    }
+    
+    .chat-history-sidebar.collapsed {
+        left: -300px;
+    }
+}
+
+    /* User info bar */
+   .user-info-bar {
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(20px);
+        border-radius: 15px;
+        padding: 1rem 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .user-actions {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .dashboard-btn {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .dashboard-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        color: white;
+        text-decoration: none;
+    }
+
+    .logout-btn {
+        background: linear-gradient(135deg, #dc3545, #c82333);
+        color: white;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+
+    .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
+        color: white;
+        text-decoration: none;
+    }
+
+    .login-prompt {
+        background: linear-gradient(135deg, #ffc107, #fd7e14);
+        color: #212529;
+        text-decoration: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+    }
+
+    .login-prompt:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 193, 7, 0.4);
+        color: #212529;
+        text-decoration: none;
+    }
+
+
+     /* Product selection checkboxes */
+.product-checkbox-container {
+    background: #fafbfc;
+}
+
+.product-checkbox-container .form-check {
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+.product-checkbox-container .form-check:hover {
+    background-color: rgba(102, 126, 234, 0.1);
+}
+
+.product-checkbox-container .form-check-input:checked + .form-check-label {
+    color: #667eea;
+    font-weight: 600;
+}
+
+.form-check-label {
+    cursor: pointer;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
 </style>
 
 <div class="main-container">
+
+    <!-- User Info Bar -->
+     <div class="user-info-bar">
+        <div class="d-flex justify-content-between align-items-center">
+            {% if customer_id %}
+                <div>
+                    <span class="text-muted">Welcome back,</span>
+                    <strong class="text-primary">Customer ID: {{ customer_id }}</strong>
+                </div>
+                <div class="user-actions">
+                    <a href="{% url 'recommendations:customer_dashboard' %}" class="dashboard-btn">
+                        <i class="fas fa-chart-line"></i> View My Dashboard
+                    </a>
+                    <a href="{% url 'recommendations:logout' %}" class="logout-btn">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                </div>
+            {% else %}
+                <div>
+                    <span class="text-muted">Get personalized recommendations and insights</span>
+                </div>
+                <div class="user-actions">
+                    <a href="{% url 'recommendations:login' %}" class="login-prompt">
+                        <i class="fas fa-sign-in-alt"></i> Login for Personalized Experience
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    <!-- End User Info Bar -->
+
     <!-- Tab Navigation -->
     <ul class="nav nav-tabs" id="recommendationTabs" role="tablist">
         <li class="nav-item" role="presentation">
@@ -271,6 +704,7 @@
         </li>
     </ul>
 
+
     <!-- Tab Content -->
     <div class="tab-content" id="recommendationTabContent">
         
@@ -278,10 +712,55 @@
         <div class="tab-pane fade{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %} show active{% endif %}" 
              id="chatbot-recommendations" role="tabpanel" aria-labelledby="chatbot-tab">
             <div class="row">
-                <div class="col-md-12">
+                <!-- Chat History Sidebar -->
+                <div class="col-md-3">
+                    <div class="chat-history-sidebar" id="chat-history-sidebar">
+                        <button class="sidebar-toggle-btn" id="sidebar-toggle-btn">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        
+                        <div class="sidebar-content">
+                            <div class="chat-history-header">
+                                <h5>
+                                    <i class="fas fa-history"></i>
+                                    Chat History 
+                                    <span class="chat-count-badge" id="chat-count-badge">0</span>
+                                </h5>
+                                <div class="chat-search">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" class="form-control" placeholder="Search chats..." id="chat-search-input">
+                                    </div>
+                                </div>
+                                <button class="new-chat-btn" onclick="startNewChat()">
+                                    <i class="fas fa-plus"></i> New Chat
+                                </button>
+                                <div class="chat-management-options">
+                                    <small class="text-muted" id="chat-count">No chats yet</small>
+                                    <div class="chat-actions">
+                                        <button class="btn btn-sm btn-outline-danger" onclick="clearAllChats()" 
+                                                title="Clear all chats" id="clear-chats-btn" disabled>
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="chat-history-list">
+                                <div class="empty-state">
+                                    <i class="fas fa-comments"></i>
+                                    <div>No chat history yet</div>
+                                    <small>Start a conversation to see your chat history</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chat Interface -->
+                <div class="col-md-9" id="chat-main-content">
                     <div class="card">
                         <div class="card-header">
-                            <h5>AI Recommendation Chatbot</h5>
+                            <h5 id="current-chat-title">AI Recommendation Chatbot</h5>
                             <small class="text-muted">Ask me anything about customer recommendations, purchase history, or product insights!</small>
                         </div>
                         <div class="card-body p-0">
@@ -304,8 +783,8 @@
                                                     </ul>
                                                     <div class="mt-3">
                                                         <strong>Try asking:</strong><br>
-                                                        <code>"Recommend products for customer 12345"</code><br>
-                                                        <code>"What did customer 15311 buy recently?"</code>
+                                                        <span class="example-query" onclick="fillExampleQuery('Recommend products for customer 12345')">"Recommend products for customer 12345"</span><br>
+                                                        <span class="example-query" onclick="fillExampleQuery('What did customer 15311 buy recently?')">"What did customer 15311 buy recently?"</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -313,7 +792,6 @@
                                     </div>
                                 </div>
                             </div>
-                            
                             <!-- Chat Input -->
                             <div class="chat-input-container p-3">
                                 <div class="input-group">
@@ -335,7 +813,8 @@
         </div>
 
         <!-- AI Recommendations Tab -->
-        <div class="tab-pane fade" id="ai-recommendations" role="tabpanel" aria-labelledby="ai-tab">
+        <div class="tab-pane fade{% if request.GET.tab == 'ai-recommendations' %} show active{% endif %}" 
+             id="ai-recommendations" role="tabpanel" aria-labelledby="ai-tab">
             <div class="row">
                 <div class="col-md-12">
                     <div class="card">
@@ -351,15 +830,23 @@
                                     <div class="col-md-6">
                                         <div class="mb-3">
                                             <label for="target_user_id" class="form-label">
-                                                <strong>Customer ID</strong> 
-                                                <span class="text-danger">*</span>
+                                                <strong>Customer ID</strong>
                                             </label>
-                                            <input type="number" class="form-control" name="target_user_id" 
-                                                   value="{{ target_user_id|default:'' }}" 
-                                                   placeholder="Enter customer ID (e.g., 12345)" required>
-                                            <div class="form-text">
-                                                Use customer IDs like: 12345, 15311, 17841, etc.
-                                            </div>
+                                            {% if customer_id %}
+                                                <input type="number" class="form-control" name="target_user_id" 
+                                                    value="{{ customer_id }}" readonly 
+                                                    style="background-color: #f8f9fa; cursor: not-allowed;">
+                                                <div class="form-text">
+                                                    Using your logged-in customer ID. <a href="{% url 'recommendations:logout' %}">Switch account?</a>
+                                                </div>
+                                            {% else %}
+                                                <input type="number" class="form-control" name="target_user_id" 
+                                                    value="{{ target_user_id|default:'' }}" 
+                                                    placeholder="Enter customer ID (e.g., 12345)" required>
+                                                <div class="form-text">
+                                                    <a href="{% url 'recommendations:login' %}">Login</a> to auto-fill your customer ID.
+                                                </div>
+                                            {% endif %}
                                         </div>
                                     </div>
                                     
@@ -369,17 +856,21 @@
                                                 <strong>Select Products</strong> 
                                                 <span class="text-danger">*</span>
                                             </label>
-                                            <select class="form-select" name="selected_products" multiple 
-                                                    size="5" required id="product-select">
+                                            <div class="product-checkbox-container" style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 8px; padding: 10px;">
                                                 {% for stock_code, description, price in available_products %}
-                                                    <option value="{{ stock_code }}"
-                                                        {% if stock_code in valid_stock_codes %}selected{% endif %}>
-                                                        {{ description }}
-                                                    </option>
+                                                    <div class="form-check mb-2">
+                                                        <input class="form-check-input" type="checkbox" name="selected_products" 
+                                                            value="{{ stock_code }}" id="product_{{ stock_code }}"
+                                                            {% if stock_code in valid_stock_codes %}checked{% endif %}>
+                                                        <label class="form-check-label" for="product_{{ stock_code }}">
+                                                            {{ description }}
+                                                            {% if price %}<span class="text-success ms-2">${{ price|floatformat:2 }}</span>{% endif %}
+                                                        </label>
+                                                    </div>
                                                 {% endfor %}
-                                            </select>
+                                            </div>
                                             <div class="form-text">
-                                                Hold Ctrl/Cmd to select multiple products. Products shown with prices when available.
+                                                Click to select/deselect multiple products. Selected products will be used for recommendations.
                                             </div>
                                         </div>
                                     </div>
@@ -448,8 +939,8 @@
                                                                 <span class="text-success fw-bold">
                                                                     ${{ rec.unit_price|floatformat:2 }}
                                                                 </span>
-                                                                {% if rec.source %}
-                                                                    <small class="text-muted">{{ rec.source }}</small>
+                                                                <!-- {% if rec.source %}
+                                                                    <small class="text-muted">{{ rec.source }}</small> -->
                                                                 {% endif %}
                                                             </div>
                                                         </div>
@@ -469,7 +960,21 @@
 </div>
 
 <script>
+// Global variables for chat history
+// Replace the JavaScript section in your template with this:
+
+// Global variables for chat history
+let chatHistory = [];
+let currentChatId = null;
+let isWaitingForResponse = false;
+
+// Global function for external access
+window.fillExampleQuery = fillExampleQuery;
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize chat history first
+    initializeChatHistory();
+    
     // Handle tab persistence
     const urlParams = new URLSearchParams(window.location.search);
     const activeTab = urlParams.get('tab');
@@ -514,139 +1019,565 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    const chatInput = document.getElementById('chat-input');
-    const sendButton = document.getElementById('send-button');
-    const chatMessages = document.getElementById('chat-messages');
-    const chatContainer = document.getElementById('chat-container');
-    
-    let isWaitingForResponse = false;
-    
-    function scrollToBottom() {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+    // Initialize the chat interface
+    initChat();
+});
+
+// Initialize chat history and load from session storage fallback
+function initializeChatHistory() {
+    // Use in-memory storage as fallback since localStorage is not supported
+    if (!window.chatHistoryStore) {
+        window.chatHistoryStore = [];
     }
+    chatHistory = window.chatHistoryStore;
     
-    function addMessage(message, isUser = false) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'} mb-3`;
-        
-        messageDiv.innerHTML = `
-            <div class="d-flex ${isUser ? 'justify-content-end' : ''}">
-                ${!isUser ? '<div class="avatar me-2"><i class="fas fa-robot"></i></div>' : ''}
-                <div class="message-content">
-                    <div class="message-bubble ${isUser ? 'bg-primary text-white' : 'bg-light'} p-3 rounded">
-                        ${isUser ? `<strong>You:</strong><br>${message}` : `<strong>AI Assistant:</strong><br>${message}`}
-                    </div>
-                </div>
-                ${isUser ? '<div class="avatar ms-2"><i class="fas fa-user"></i></div>' : ''}
-            </div>
-        `;
-        
-        chatMessages.appendChild(messageDiv);
-        scrollToBottom();
-    }
+    updateChatHistoryDisplay();
+    updateChatCount();
     
-    function showTypingIndicator() {
-        const typingDiv = document.createElement('div');
-        typingDiv.className = 'message bot-message mb-3 typing-indicator';
-        typingDiv.id = 'typing-indicator';
-        
-        typingDiv.innerHTML = `
-            <div class="d-flex">
-                <div class="avatar me-2"><i class="fas fa-robot"></i></div>
-                <div class="message-content">
-                    <div class="message-bubble bg-light p-3 rounded">
-                        <div class="typing-dots">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
-                        <small class="ms-2 text-muted">AI is thinking...</small>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        chatMessages.appendChild(typingDiv);
-        scrollToBottom();
-    }
+    // Sidebar toggle functionality
+    const sidebarToggle = document.getElementById('sidebar-toggle-btn');
+    const sidebar = document.getElementById('chat-history-sidebar');
+    const chatMainContent = document.getElementById('chat-main-content');
     
-    function hideTypingIndicator() {
-        const typingIndicator = document.getElementById('typing-indicator');
-        if (typingIndicator) {
-            typingIndicator.remove();
-        }
-    }
-    
-    function sendMessage() {
-        const message = chatInput.value.trim();
-        if (!message || isWaitingForResponse) return;
-        
-        // Add user message
-        addMessage(message, true);
-        chatInput.value = '';
-        
-        // Show typing indicator
-        showTypingIndicator();
-        isWaitingForResponse = true;
-        sendButton.disabled = true;
-        chatInput.disabled = true;
-        
-        // Send to server
-        fetch('{% url "recommendations:chatbot" %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({
-                message: message,
-                user_id: 'web_user_' + Date.now()
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideTypingIndicator();
+    if (sidebarToggle && sidebar && chatMainContent) {
+        sidebarToggle.addEventListener('click', function() {
+            sidebar.classList.toggle('collapsed');
             
-            if (data.status === 'success') {
-                addMessage(data.response);
-            } else if (data.status === 'fallback') {
-                addMessage(`<i class="fas fa-exclamation-triangle"></i> ${data.response}`);
+            if (sidebar.classList.contains('collapsed')) {
+                chatMainContent.classList.remove('col-md-9');
+                chatMainContent.classList.add('col-md-12');
             } else {
-                addMessage(`<i class="fas fa-times-circle"></i> ${data.error || 'Sorry, I encountered an error. Please try again.'}`);
+                chatMainContent.classList.remove('col-md-12');
+                chatMainContent.classList.add('col-md-9');
             }
-        })
-        .catch(error => {
-            hideTypingIndicator();
-            console.error('Chat error:', error);
-            addMessage('<i class="fas fa-times-circle"></i> Sorry, I encountered a connection error. Please try again.');
-        })
-        .finally(() => {
-            isWaitingForResponse = false;
-            sendButton.disabled = false;
-            chatInput.disabled = false;
-            chatInput.focus();
         });
     }
     
+    // Search functionality
+    const searchInput = document.getElementById('chat-search-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            filterChatHistory(this.value);
+        });
+    }
+    
+    // Start with a new chat if no current chat
+    if (!currentChatId) {
+        startNewChat();
+    }
+}
+
+// Fill example query in the input
+function fillExampleQuery(query) {
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.value = query;
+        chatInput.focus();
+    }
+}
+
+// Show the welcome message
+function showWelcomeMessage() {
+    const welcomeMessage = `
+        <div class="message bot-message mb-3">
+            <div class="d-flex">
+                <div class="avatar me-2"><i class="fas fa-robot"></i></div>
+                <div class="message-content">
+                    <div class="message-bubble p-3">
+                        <strong>AI Assistant:</strong><br>
+                        Hello! I'm your AI-powered recommendation assistant. I can help you with:
+                        <ul class="mt-2 mb-0">
+                            <li><strong>Personalized recommendations</strong> for any customer</li>
+                            <li><strong>Customer behavior analysis</strong> and purchase patterns</li>
+                            <li><strong>Product insights</strong> and market trends</li>
+                            <li><strong>Interactive conversations</strong> about your business data</li>
+                        </ul>
+                        <div class="mt-3">
+                            <strong>Try asking:</strong><br>
+                            <span class="example-query" onclick="fillExampleQuery('Recommend products for customer 12345')">"Recommend products for customer 12345"</span><br>
+                            <span class="example-query" onclick="fillExampleQuery('What did customer 15311 buy recently?')">"What did customer 15311 buy recently?"</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    const chatMessagesElement = document.getElementById('chat-messages');
+    if (chatMessagesElement) {
+        chatMessagesElement.innerHTML = welcomeMessage;
+    }
+}
+
+// Add a message to the DOM
+function addMessageToDOM(message, isUser = false, saveToHistory = true) {
+    const chatMessagesElement = document.getElementById('chat-messages');
+    if (!chatMessagesElement) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'} mb-3`;
+    
+    messageDiv.innerHTML = `
+        <div class="d-flex ${isUser ? 'justify-content-end' : ''}">
+            ${!isUser ? '<div class="avatar me-2"><i class="fas fa-robot"></i></div>' : ''}
+            <div class="message-content">
+                <div class="message-bubble ${isUser ? 'bg-primary text-white' : 'bg-light'} p-3 rounded">
+                    ${isUser ? `<strong>You:</strong><br>${message}` : `<strong>AI Assistant:</strong><br>${message}`}
+                </div>
+            </div>
+            ${isUser ? '<div class="avatar ms-2"><i class="fas fa-user"></i></div>' : ''}
+        </div>
+    `;
+    
+    chatMessagesElement.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+// Scroll to the bottom of the chat container
+function scrollToBottom() {
+    const chatContainer = document.getElementById('chat-container');
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
+// Show typing indicator
+function showTypingIndicator() {
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+    
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message bot-message mb-3 typing-indicator';
+    typingDiv.id = 'typing-indicator';
+    
+    typingDiv.innerHTML = `
+        <div class="d-flex">
+            <div class="avatar me-2"><i class="fas fa-robot"></i></div>
+            <div class="message-content">
+                <div class="message-bubble bg-light p-3 rounded">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <small class="ms-2 text-muted">AI is thinking...</small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    chatMessages.appendChild(typingDiv);
+    scrollToBottom();
+}
+
+// Hide typing indicator
+function hideTypingIndicator() {
+    const typingIndicator = document.getElementById('typing-indicator');
+    if (typingIndicator) {
+        typingIndicator.remove();
+    }
+}
+
+// Save messages to chat history
+function saveMessagesToHistory(userMessage, botResponse) {
+    if (!currentChatId) {
+        currentChatId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        console.log('Generated new chat ID:', currentChatId);
+    }
+    
+    const timestamp = new Date().toISOString();
+    const messages = [
+        { type: 'user', content: userMessage, timestamp: timestamp },
+        { type: 'bot', content: botResponse, timestamp: timestamp }
+    ];
+    
+    // Find existing chat or create new one
+    let existingChatIndex = chatHistory.findIndex(c => c.id === currentChatId);
+    
+    if (existingChatIndex >= 0) {
+        // Update existing chat
+        chatHistory[existingChatIndex].messages.push(...messages);
+        chatHistory[existingChatIndex].lastUpdated = timestamp;
+        
+        // Update title if this is still a new chat (has default title or very few messages)
+        if (chatHistory[existingChatIndex].title.startsWith('New Chat') || 
+            chatHistory[existingChatIndex].messages.length <= 4) {
+            chatHistory[existingChatIndex].title = userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : '');
+        }
+        
+        console.log('Updated existing chat:', currentChatId, 'now has', chatHistory[existingChatIndex].messages.length, 'messages');
+    } else {
+        // Create new chat entry
+        const newChat = {
+            id: currentChatId,
+            title: userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : ''),
+            messages: messages,
+            lastUpdated: timestamp,
+            created: timestamp
+        };
+        chatHistory.unshift(newChat);
+        console.log('Created new chat entry:', currentChatId);
+    }
+    
+    // Keep only last 50 chats
+    if (chatHistory.length > 50) {
+        const removed = chatHistory.splice(50);
+        console.log('Removed', removed.length, 'old chats');
+    }
+    
+    // Save to global store
+    window.chatHistoryStore = chatHistory;
+    
+    updateChatHistoryDisplay();
+    updateChatCount();
+}
+
+// Send a message to the chatbot
+function sendMessage() {
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-button');
+    
+    if (!chatInput || !sendButton) {
+        console.error('Chat input or send button not found');
+        return;
+    }
+    
+    const message = chatInput.value.trim();
+    if (!message || isWaitingForResponse) return;
+    
+    console.log('Sending message to chat:', currentChatId, message);
+    
+    // Add user message
+    addMessageToDOM(message, true, false);
+    chatInput.value = '';
+    
+    // Show typing indicator
+    showTypingIndicator();
+    isWaitingForResponse = true;
+    sendButton.disabled = true;
+    chatInput.disabled = true;
+    
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (!csrfToken) {
+        console.error('CSRF token not found');
+        hideTypingIndicator();
+        addMessageToDOM('<i class="fas fa-times-circle"></i> Error: Security token not found. Please refresh the page.', false, false);
+        isWaitingForResponse = false;
+        sendButton.disabled = false;
+        chatInput.disabled = false;
+        return;
+    }
+    
+    // Send to server with chat_id for context isolation
+    const chatbotUrl = "{% url 'recommendations:chatbot' %}";
+    
+    fetch(chatbotUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken.value
+        },
+        body: JSON.stringify({
+            message: message,
+            chat_id: currentChatId,  // Include chat_id for context isolation
+            user_id: 'web_user_' + Date.now()
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        hideTypingIndicator();
+        
+        let botResponse = '';
+        if (data.status === 'success') {
+            botResponse = data.response;
+        } else if (data.status === 'fallback') {
+            botResponse = `<i class="fas fa-exclamation-triangle"></i> ${data.response}`;
+        } else {
+            botResponse = `<i class="fas fa-times-circle"></i> ${data.error || 'Sorry, I encountered an error. Please try again.'}`;
+        }
+        
+        addMessageToDOM(botResponse, false, false);
+        
+        // Save both messages to history at once
+        saveMessagesToHistory(message, botResponse);
+    })
+    .catch(error => {
+        hideTypingIndicator();
+        console.error('Chat error:', error);
+        const errorMessage = '<i class="fas fa-times-circle"></i> Sorry, I encountered a connection error. Please try again.';
+        addMessageToDOM(errorMessage, false, false);
+        saveMessagesToHistory(message, errorMessage);
+    })
+    .finally(() => {
+        isWaitingForResponse = false;
+        sendButton.disabled = false;
+        chatInput.disabled = false;
+        chatInput.focus();
+    });
+}
+
+// Initialize the chat interface
+function initChat() {
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-button');
+    
+    console.log('Initializing chat...', { chatInput, sendButton });
+    
+    if (!chatInput || !sendButton) {
+        console.error('Chat elements not found');
+        return;
+    }
+    
     // Event listeners
-    sendButton.addEventListener('click', sendMessage);
+    sendButton.addEventListener('click', function(e) {
+        console.log('Send button clicked');
+        e.preventDefault();
+        sendMessage();
+    });
     
     chatInput.addEventListener('keypress', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
+            console.log('Enter key pressed');
             e.preventDefault();
             sendMessage();
         }
     });
     
     // Focus on chat input when tab is shown
-    document.getElementById('chatbot-tab').addEventListener('shown.bs.tab', function() {
-        chatInput.focus();
-    });
+    const chatbotTab = document.getElementById('chatbot-tab');
+    if (chatbotTab) {
+        chatbotTab.addEventListener('shown.bs.tab', function() {
+            chatInput.focus();
+        });
+    }
     
     // Initial focus
-    if (document.getElementById('chatbot-recommendations').classList.contains('active')) {
+    if (document.getElementById('chatbot-recommendations') && document.getElementById('chatbot-recommendations').classList.contains('active')) {
         chatInput.focus();
     }
-});
+    
+    console.log('Chat initialized successfully');
+}
+
+// Start a new chat
+function startNewChat() {
+    // Generate new unique chat ID
+    currentChatId = 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    console.log('Starting new chat with ID:', currentChatId);
+    
+    // Clear current chat messages and show welcome
+    const chatMessages = document.getElementById('chat-messages');
+    if (chatMessages) {
+        chatMessages.innerHTML = '';
+        showWelcomeMessage();
+    }
+    
+    // Remove active class from all chat items
+    document.querySelectorAll('.chat-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Update chat title
+    const titleElement = document.getElementById('current-chat-title');
+    if (titleElement) {
+        titleElement.textContent = 'New Chat - AI Recommendation Chatbot';
+    }
+    
+    // Focus on input
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.focus();
+    }
+    
+    // Don't save to history yet - wait for first message
+    console.log('New chat initialized with fresh context');
+}
+
+// Load a specific chat
+function loadChat(chatId) {
+    const chat = chatHistory.find(c => c.id === chatId);
+    if (!chat) {
+        console.error('Chat not found:', chatId);
+        return;
+    }
+    
+    console.log('Loading chat:', chatId, 'with', chat.messages.length, 'messages');
+    
+    // Switch to this chat's context
+    currentChatId = chatId;
+    
+    const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
+    
+    // Clear current messages
+    chatMessages.innerHTML = '';
+    
+    // Show welcome message first
+    showWelcomeMessage();
+    
+    // Load chat messages (skip welcome messages from history)
+    chat.messages.forEach(message => {
+        // Skip any messages that look like welcome messages
+        if (message.content.includes('Hello! I\'m your AI-powered recommendation assistant')) {
+            return;
+        }
+        addMessageToDOM(message.content, message.type === 'user', false);
+    });
+    
+    // Update UI to show active chat
+    document.querySelectorAll('.chat-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    const currentChatElement = document.querySelector(`[onclick="loadChat('${chatId}')"]`);
+    if (currentChatElement) {
+        currentChatElement.classList.add('active');
+    }
+    
+    // Update title
+    const titleElement = document.getElementById('current-chat-title');
+    if (titleElement) {
+        titleElement.textContent = `${chat.title} - AI Recommendation Chatbot`;
+    }
+    
+    // Focus on input
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.focus();
+    }
+    
+    console.log('Chat loaded successfully. Current chat ID:', currentChatId);
+}
+
+// Delete a chat
+function deleteChat(chatId) {
+    if (confirm('Are you sure you want to delete this chat? This will permanently remove all messages and context.')) {
+        console.log('Deleting chat:', chatId);
+        
+        // Remove from history
+        const chatIndex = chatHistory.findIndex(c => c.id === chatId);
+        if (chatIndex >= 0) {
+            chatHistory.splice(chatIndex, 1);
+            window.chatHistoryStore = chatHistory;
+            console.log('Chat deleted from history');
+        }
+        
+        // If this was the current chat, start a new one
+        if (currentChatId === chatId) {
+            console.log('Deleted chat was active, starting new chat');
+            startNewChat();
+        }
+        
+        updateChatHistoryDisplay();
+        updateChatCount();
+    }
+}
+
+// Clear all chats
+function clearAllChats() {
+    if (confirm('Are you sure you want to clear all chat history? This will permanently delete all conversations and their contexts.')) {
+        console.log('Clearing all chats');
+        
+        chatHistory = [];
+        window.chatHistoryStore = chatHistory;
+        
+        // Always start fresh
+        startNewChat();
+        updateChatHistoryDisplay();
+        updateChatCount();
+        
+        console.log('All chats cleared, new chat started');
+    }
+}
+
+// Update chat history display
+function updateChatHistoryDisplay() {
+    const historyList = document.getElementById('chat-history-list');
+    if (!historyList) return;
+    
+    if (chatHistory.length === 0) {
+        historyList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-comments"></i>
+                <div>No chat history yet</div>
+                <small>Start a conversation to see your chat history</small>
+            </div>
+        `;
+        return;
+    }
+    
+    historyList.innerHTML = chatHistory.map(chat => {
+        const lastMessage = chat.messages[chat.messages.length - 1];
+        const preview = lastMessage ? lastMessage.content.replace(/<[^>]*>/g, '').substring(0, 50) : 'New chat';
+        const isActive = chat.id === currentChatId;
+        
+        return `
+            <div class="chat-item ${isActive ? 'active' : ''}" onclick="loadChat('${chat.id}')">
+                <div class="chat-name">
+                    <span><i class="fas fa-comment"></i> ${chat.title}</span>
+                    <button class="chat-delete-btn" onclick="event.stopPropagation(); deleteChat('${chat.id}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="chat-preview">
+                    ${preview}${preview.length >= 50 ? '...' : ''}
+                </div>
+                <div class="chat-date">
+                    <i class="fas fa-clock"></i>
+                    ${new Date(chat.lastUpdated).toLocaleDateString()}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Update chat count
+function updateChatCount() {
+    const countBadge = document.getElementById('chat-count-badge');
+    const countText = document.getElementById('chat-count');
+    const clearBtn = document.getElementById('clear-chats-btn');
+    
+    if (countBadge) {
+        countBadge.textContent = chatHistory.length;
+    }
+    
+    if (countText) {
+        countText.textContent = 
+            chatHistory.length === 0 ? 'No chats yet' : `${chatHistory.length} chat${chatHistory.length > 1 ? 's' : ''}`;
+    }
+    
+    if (clearBtn) {
+        clearBtn.disabled = chatHistory.length === 0;
+    }
+}
+
+// Filter chat history
+function filterChatHistory(searchTerm) {
+    const items = document.querySelectorAll('.chat-item');
+    const term = searchTerm.toLowerCase();
+    
+    items.forEach(item => {
+        const title = item.querySelector('.chat-name span').textContent.toLowerCase();
+        const preview = item.querySelector('.chat-preview').textContent.toLowerCase();
+        
+        if (title.includes(term) || preview.includes(term)) {
+            item.style.display = 'block';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+}
+
+// Make functions available globally for onclick handlers
+window.startNewChat = startNewChat;
+window.loadChat = loadChat;
+window.deleteChat = deleteChat;
+window.clearAllChats = clearAllChats;
 </script>
 {% endblock %}

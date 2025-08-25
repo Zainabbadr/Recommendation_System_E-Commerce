@@ -7,4 +7,6 @@ urlpatterns = [
     path('chatbot/', views.chatbot_view, name='chatbot'),
     path('health/', views.health_check, name='health'),
     path('logout/', views.logout_view, name='logout'),
+    path('dashboard/', views.customer_dashboard_view, name='customer_dashboard'), # NEW: URL for customer dashboard
+
 ]
