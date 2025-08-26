@@ -22,6 +22,7 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from difflib import SequenceMatcher
 
+
 _chatbot_instance = None 
 FEW_SHOT_EXAMPLES = {
     "greeting": [
@@ -347,9 +348,9 @@ class ConversationState(TypedDict):
 class RecommendationChatbot:
     """LangGraph-based chatbot with proper routing, kernel tracking, and RAG-based final generation."""
     
-    MAX_HISTORY_MESSAGES = 20 
-    THREAD_ID = "1"  # Fixed thread ID
-    SESSION_ID = "1"  # Fixed session ID
+    MAX_HISTORY_MESSAGES = 10 
+    # THREAD_ID = "1"  # Fixed thread ID
+    # SESSION_ID = "1"  # Fixed session ID
 
     def __init__(self, groq_api_key: str = None):
         try:
@@ -387,7 +388,7 @@ class RecommendationChatbot:
             # Initialize memory FIRST (before creating graph)
             self.memory = MemorySaver()
             # Add chat history management
-            self.chat_histories = {}        
+            # self.chat_histories = {}        
             # Create the conversation graph (after memory is initialized)
             self.graph = self._create_graph()
             # Add cleanup to prevent memory bloat
@@ -404,6 +405,7 @@ class RecommendationChatbot:
         try:
             if hasattr(self, 'memory'):
                 del self.memory
+                self.memory = MemorySaver()
             
             if hasattr(self, 'chat_histories'):
                 self.chat_histories.clear()
@@ -866,23 +868,191 @@ class RecommendationChatbot:
 
     # ==================== MAIN INTERFACE METHODS ====================
 
-    def chat(self, message: str, user_id: str = "default_user") -> str:
-        """Main chat interface with fixed thread and session IDs."""
+    def chat(self, message: str, chat_id: str = None, user_id: str = "default_user", session_customer_id: int = None) -> str:
+        """Main chat interface with Django ChatHistory integration."""
         try:
-            # Use fixed thread and session IDs
+            # Use chat_id as both thread_id and session_id for isolation
+            if not chat_id:
+                chat_id = f"chat_{int(time())}"
+            
             config = {
                 "configurable": {
-                    "thread_id": self.THREAD_ID,
-                    "session_id": self.SESSION_ID
+                    "thread_id": chat_id,
+                    "session_id": chat_id
                 }
             }
             
-            # Get current state
+            # Load existing chat history from Django model
+            existing_messages = self._load_chat_history_from_django(chat_id, session_customer_id)
+            
+            # Get current state for this specific chat
             current_state = self.graph.get_state(config)
             
             if current_state and current_state.values:
                 state = current_state.values
+                # Update with loaded messages if state is empty
+                if not state.get("messages") and existing_messages:
+                    state["messages"] = existing_messages
             else:
+                # Create fresh state with loaded history
+                state = ConversationState(
+                    messages=existing_messages,
+                    user_id=session_customer_id,
+                    context={"session_customer_id": session_customer_id} if session_customer_id else {},
+                    last_recommendations=[],
+                    conversation_stage="greeting",
+                    user_preferences={},
+                    extracted_info={},
+                    last_context={},
+                    route_history=[],
+                    kernel_log=[],
+                    intermediate_responses=[],
+                    final_context={}
+                )
+            
+            # Update session customer ID in existing state
+            if session_customer_id:
+                state["user_id"] = session_customer_id
+                if "context" not in state:
+                    state["context"] = {}
+                state["context"]["session_customer_id"] = session_customer_id
+            
+            # Add user message
+            if message.strip():
+                state["messages"].append(HumanMessage(content=message))
+                
+                print(f"Processing message for chat {chat_id} with customer {session_customer_id}: {message[:50]}...")
+                
+                # Run the graph with the specific config
+                result = self.graph.invoke(state, config)
+                
+                # Save updated conversation to Django
+                self._save_chat_history_to_django(chat_id, result["messages"], session_customer_id)
+                
+                # Get AI response
+                ai_messages = [msg for msg in result["messages"] if isinstance(msg, AIMessage)]
+                if ai_messages:
+                    latest_response = ai_messages[-1].content
+                    
+                    # Print debug info
+                    kernel_log = result.get("kernel_log", [])
+                    if kernel_log:
+                        print(f"\nKERNEL LOG for chat {chat_id}:")
+                        for entry in kernel_log[-3:]:
+                            print(f"  {entry['timestamp']} - {entry['operation']}: {entry['details']}")
+                    
+                    return latest_response
+            
+            return "How can I help you?"
+            
+        except Exception as e:
+            print(f"Error in chat for {chat_id}: {e}")
+            return "I encountered an issue. Could you please rephrase your request?"
+        
+    def _load_chat_history_from_django(self, chat_id: str, session_customer_id: int = None) -> List[BaseMessage]:
+        """Load chat history from Django ChatHistory model."""
+        try:
+            from recommendations.models import ChatHistory
+            
+            # Try to get existing chat
+            try:
+                chat_obj = ChatHistory.objects.get(chat_id=chat_id)
+                messages_data = chat_obj.get_messages()
+                
+                # Convert to LangChain messages
+                langchain_messages = []
+                for msg_data in messages_data:
+                    if msg_data.get('type') == 'user':
+                        langchain_messages.append(HumanMessage(content=msg_data.get('content', '')))
+                    elif msg_data.get('type') == 'assistant':
+                        langchain_messages.append(AIMessage(content=msg_data.get('content', '')))
+                
+                print(f"Loaded {len(langchain_messages)} messages from Django for chat {chat_id}")
+                return langchain_messages
+                
+            except ChatHistory.DoesNotExist:
+                print(f"No existing chat history found for chat {chat_id}")
+                return []
+                
+        except Exception as e:
+            print(f"Error loading chat history from Django: {e}")
+            return []
+
+    def _save_chat_history_to_django(self, chat_id: str, messages: List[BaseMessage], session_customer_id: int = None):
+        """Save chat history to Django ChatHistory model."""
+        try:
+            from recommendations.models import ChatHistory
+            
+            # Convert LangChain messages to Django format
+            messages_data = []
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    messages_data.append({
+                        'type': 'user',
+                        'content': msg.content,
+                        'timestamp': pd.Timestamp.now(tz='UTC').isoformat()
+                    })
+                elif isinstance(msg, AIMessage):
+                    messages_data.append({
+                        'type': 'assistant', 
+                        'content': msg.content,
+                        'timestamp': pd.Timestamp.now(tz='UTC').isoformat()
+                    })
+            
+            # Generate title from first user message
+            title = "New Chat"
+            user_messages = [msg for msg in messages if isinstance(msg, HumanMessage)]
+            if user_messages:
+                first_message = user_messages[0].content
+                title = first_message[:50] + "..." if len(first_message) > 50 else first_message
+            
+            # Update or create chat
+            chat_obj, created = ChatHistory.objects.update_or_create(
+                chat_id=chat_id,
+                defaults={
+                    'title': title,
+                    'customer_id': session_customer_id,
+                }
+            )
+            
+            # Update messages
+            chat_obj.set_messages(messages_data)
+            chat_obj.save()
+            
+            print(f"Saved {len(messages_data)} messages to Django for chat {chat_id}")
+            
+        except Exception as e:
+            print(f"Error saving chat history to Django: {e}")
+
+    async def chat_stream(self, message: str, chat_id: str = None, user_id: str = "default_user"):
+        """Streaming chat interface with dynamic thread and session IDs per chat."""
+        current_timestamp = pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S')
+        
+        if not chat_id:
+            chat_id = f"chat_{int(time())}"
+        
+        print("\n" + "="*50)
+        print(f"🕐 Stream Started at: {current_timestamp}")
+        print(f"💬 Chat ID: {chat_id}")
+        print(f"👤 User ID: {user_id}")
+        print(f"💬 Message: {message}")
+        print("="*50 + "\n")
+
+        # Use chat_id for both thread and session isolation
+        config = {
+            "configurable": {
+                "thread_id": chat_id,
+                "session_id": chat_id
+            }
+        }
+        
+        try:
+            # Get current state for this specific chat
+            current_state = self.graph.get_state(config)
+            if current_state and current_state.values:
+                state = current_state.values
+            else:
+                # Create fresh state for new chat
                 state = ConversationState(
                     messages=[],
                     user_id=None,
@@ -900,98 +1070,12 @@ class RecommendationChatbot:
             
             # Add user message
             if message.strip():
-                state["messages"].append(HumanMessage(content=message))
-                
-                print(f"🚀 Processing message: {message[:50]}...")
-                
-                # Run the graph
-                result = self.graph.invoke(state, config)
-                
-                # Get AI response
-                ai_messages = [msg for msg in result["messages"] if isinstance(msg, AIMessage)]
-                if ai_messages:
-                    latest_response = ai_messages[-1].content
-                    
-                    # Print kernel log for debugging
-                    kernel_log = result.get("kernel_log", [])
-                    if kernel_log:
-                        print("\n🔍 KERNEL LOG:")
-                        for entry in kernel_log[-5:]:  # Last 5 entries
-                            print(f"  {entry['timestamp']} - {entry['operation']}: {entry['details']}")
-                    
-                    # Print route history
-                    route_history = result.get("route_history", [])
-                    if route_history:
-                        print(f"\n🛤️ ROUTE HISTORY: {' -> '.join(route_history)}")
-                    
-                    # Clean up old messages
-                    if len(state["messages"]) > self.MAX_HISTORY_MESSAGES:
-                        state["messages"] = state["messages"][-self.MAX_HISTORY_MESSAGES:]
-                    
-                    return latest_response
-            
-            return "How can I help you?"
-            
-        except Exception as e:
-            print(f"❌ Error in chat: {e}")
-            return "I encountered an issue. Could you please rephrase your request?"
-
-    async def chat_stream(self, message: str, user_id: str = "default_user"):
-        """Streaming chat interface with fixed thread and session IDs."""
-        current_timestamp = pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S')
-        
-        print("\n" + "="*50)
-        print(f"🕐 Stream Started at: {current_timestamp}")
-        print(f"👤 User ID: {user_id}")
-        print(f"💬 Message: {message}")
-        print("="*50 + "\n")
-
-        # Use fixed thread and session IDs
-        config = {
-            "configurable": {
-                "thread_id": self.THREAD_ID,
-                "session_id": self.SESSION_ID
-            }
-        }
-        
-        try:
-            # Create or get chat history
-            if user_id not in self.chat_histories:
-                print(f"📚 Creating new chat history for user {user_id}")
-                self.chat_histories[user_id] = ChatMessageHistory()
-            
-            chat_history = self.chat_histories[user_id]
-            
-            # Get current state with history
-            current_state = self.graph.get_state(config)
-            if current_state and current_state.values:
-                state = current_state.values
-                state["messages"] = list(chat_history.messages)
-            else:
-                state = ConversationState(
-                    messages=list(chat_history.messages),
-                    user_id=None,
-                    context={},
-                    last_recommendations=[],
-                    conversation_stage="greeting",
-                    user_preferences={},
-                    extracted_info={},
-                    last_context={},
-                    route_history=[],
-                    kernel_log=[],
-                    intermediate_responses=[],
-                    final_context={}
-                )
-            
-            # Add user message
-            if message.strip():
                 user_message = HumanMessage(content=message)
                 state["messages"].append(user_message)
-                chat_history.add_message(user_message)
             
             # Stream the response
             buffer = []
-            print("\n🎯 Streaming messages...")
+            print(f"\n🎯 Streaming messages for chat {chat_id}...")
             
             async for chunk in self.graph.astream(
                 state, 
@@ -1003,26 +1087,85 @@ class RecommendationChatbot:
                     buffer.append(token)
                     yield {
                         "token": token,
-                        "metadata": metadata
+                        "metadata": metadata,
+                        "chat_id": chat_id
                     }
             
-            # Combine the complete response
+            # Log completion
             if buffer:
                 complete_response = "".join(str(token) for token in buffer)
-                ai_message = AIMessage(content=complete_response)
-                chat_history.add_message(ai_message)
-                
-                print(f"\n✅ Response completed: {len(buffer)} tokens")
+                print(f"\n✅ Response completed for chat {chat_id}: {len(buffer)} tokens")
                     
         except Exception as e:
             error_time = pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S')
-            print(f"\n❌ Error in chat_stream at {error_time}: {str(e)}")
+            print(f"\n❌ Error in chat_stream for {chat_id} at {error_time}: {str(e)}")
             
             yield {
                 "error": str(e),
                 "timestamp": error_time,
+                "chat_id": chat_id,
                 "user": user_id
             }
+
+
+    def clear_chat_history(self, chat_id: str):
+        """Clear history for a specific chat."""
+        try:
+            config = {
+                "configurable": {
+                    "thread_id": chat_id,
+                    "session_id": chat_id
+                }
+            }
+            
+            # Create fresh state
+            fresh_state = ConversationState(
+                messages=[],
+                user_id=None,
+                context={},
+                last_recommendations=[],
+                conversation_stage="greeting",
+                user_preferences={},
+                extracted_info={},
+                last_context={},
+                route_history=[],
+                kernel_log=[],
+                intermediate_responses=[],
+                final_context={}
+            )
+            
+            # Update the memory with fresh state
+            self.graph.update_state(config, fresh_state)
+            print(f"✅ Cleared history for chat {chat_id}")
+            
+        except Exception as e:
+            print(f"❌ Error clearing chat history for {chat_id}: {e}")
+
+    def get_chat_context(self, chat_id: str) -> Dict[str, Any]:
+        """Get the current context for a specific chat."""
+        try:
+            config = {
+                "configurable": {
+                    "thread_id": chat_id,
+                    "session_id": chat_id
+                }
+            }
+            
+            current_state = self.graph.get_state(config)
+            if current_state and current_state.values:
+                return {
+                    "message_count": len(current_state.values.get("messages", [])),
+                    "conversation_stage": current_state.values.get("conversation_stage", "greeting"),
+                    "context": current_state.values.get("context", {}),
+                    "route_history": current_state.values.get("route_history", []),
+                    "has_recommendations": len(current_state.values.get("last_recommendations", [])) > 0
+                }
+            else:
+                return {"message_count": 0, "conversation_stage": "new", "context": {}}
+                
+        except Exception as e:
+            print(f"❌ Error getting chat context for {chat_id}: {e}")
+            return {"error": str(e)}
 
     def _execute_db_query(self, query: str, params: tuple = ()) -> List[Dict]:
         """Execute database query with proper resource cleanup"""
@@ -1039,41 +1182,52 @@ class RecommendationChatbot:
         finally:
             if conn:
                 conn.close()
-
+                
     def _extract_context_from_messages(self, state: ConversationState) -> Dict[str, Any]:
-        """Extract context from message history with optimization."""
+        """Enhanced context extraction with chat history and session customer ID priority."""
         try:
             self._log_kernel_operation(state, "context_extraction", {"message_count": len(state.get("messages", []))})
             
+            # Start with session customer ID if available
+            session_customer_id = state.get("context", {}).get("session_customer_id")
+            
             context = {
                 "mentioned_customer_ids": [],
-                "last_customer_id": None,
+                "last_customer_id": session_customer_id,
+                "session_customer_id": session_customer_id,
                 "mentioned_products": [],
                 "mentioned_stock_codes": [],
                 "last_stock_code": None,
                 "query_types": [],
                 "last_purchase_info": None,
-                "timestamp": time()
+                "timestamp": time(),
+                "chat_history_loaded": True  # Flag to indicate history was considered
             }
             
+            # If session customer ID exists, add it to mentioned list
+            if session_customer_id:
+                context["mentioned_customer_ids"].append(session_customer_id)
+            
+            # Process ALL messages in chat history (not just recent 5)
             messages = state.get("messages", [])
             unique_messages = []
             seen_contents = set()
             
-            for msg in messages[-5:]:  # Look at last 5 messages only
+            # Consider more messages for context extraction from full chat history
+            for msg in messages[-10:]:  # Last 10 messages instead of 5
                 if isinstance(msg, HumanMessage):
                     content = msg.content.strip()
                     if content and content not in seen_contents:
                         unique_messages.append(msg)
                         seen_contents.add(content)
             
-            # Process unique messages
+            # Process unique messages for additional customer IDs
             if unique_messages:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
                     
                     for msg in unique_messages:
-                        # Extract customer IDs
+                        # Extract customer IDs from messages
                         customer_ids = re.findall(r'\b(\d{5,})\b', msg.content)
                         for cid in customer_ids:
                             try:
@@ -1085,24 +1239,29 @@ class RecommendationChatbot:
                                     valid_id = int(cid)
                                     if valid_id not in context["mentioned_customer_ids"]:
                                         context["mentioned_customer_ids"].append(valid_id)
-                                        context["last_customer_id"] = valid_id
-                            except Exception as e:
+                                        # Update last_customer_id only if no session ID or if explicitly mentioned
+                                        if not session_customer_id or valid_id != session_customer_id:
+                                            context["last_customer_id"] = valid_id
+                            except Exception:
                                 continue
             
             return context
             
         except Exception as e:
-            print(f"❌ Error in context extraction: {str(e)}")
+            print(f"Error in context extraction: {str(e)}")
             return {
-                "mentioned_customer_ids": [],
-                "last_customer_id": None,
+                "mentioned_customer_ids": [session_customer_id] if session_customer_id else [],
+                "last_customer_id": session_customer_id,
+                "session_customer_id": session_customer_id,
                 "mentioned_products": [],
                 "mentioned_stock_codes": [],
                 "last_stock_code": None,
                 "query_types": [],
                 "last_purchase_info": None,
-                "timestamp": time()
+                "timestamp": time(),
+                "chat_history_loaded": False
             }
+
 
     def _create_graph(self) -> StateGraph:
         """Create the LangGraph conversation flow with enhanced prompt target routing."""
@@ -1299,9 +1458,13 @@ class RecommendationChatbot:
         return state
 
     def _handle_greeting_node(self, state: ConversationState) -> ConversationState:
-        """Handle greeting messages."""
+        """Handle greeting messages with session customer awareness."""
         try:
-            self._log_kernel_operation(state, "greeting_handling", {"user_id": state.get("user_id")})
+            session_customer_id = state.get("context", {}).get("session_customer_id")
+            self._log_kernel_operation(state, "greeting_handling", {
+                "user_id": state.get("user_id"),
+                "session_customer_id": session_customer_id
+            })
             
             # Extract user name if mentioned
             user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
@@ -1313,12 +1476,19 @@ class RecommendationChatbot:
                 user_name = name_match.group(1)
                 state["context"]["user_name"] = user_name
             
+            # Get customer data if session customer ID is available
+            customer_data = {}
+            if session_customer_id:
+                customer_data = self._get_comprehensive_customer_data(session_customer_id)
+            
             # Store intermediate response for RAG
             intermediate_response = f"""
 GREETING_CONTEXT: User said hello{f' and introduced themselves as {user_name}' if user_name else ''}. 
-This is a greeting interaction that should result in a welcoming response introducing the assistant's capabilities.
+This is a greeting interaction that should result in a welcoming response.
+SESSION_CUSTOMER_ID: {session_customer_id if session_customer_id else 'Not logged in'}
+CUSTOMER_DATA: {json.dumps(customer_data, indent=2) if customer_data else 'No customer data available'}
 CAPABILITIES: The assistant can help with product recommendations, customer analysis, purchase history, and product information.
-TONE: Should be friendly, welcoming, and informative.
+TONE: Should be friendly, welcoming, and personalized if customer data is available.
             """
             
             if "intermediate_responses" not in state:
@@ -1329,11 +1499,16 @@ TONE: Should be friendly, welcoming, and informative.
             state["final_context"] = {
                 "interaction_type": "greeting",
                 "user_name": user_name,
+                "session_customer_id": session_customer_id,
+                "customer_data": customer_data,
                 "should_introduce_capabilities": True,
-                "tone": "friendly_welcoming"
+                "tone": "friendly_welcoming_personalized" if session_customer_id else "friendly_welcoming"
             }
             
-            self._log_kernel_operation(state, "greeting_processed", {"has_name": bool(user_name)})
+            self._log_kernel_operation(state, "greeting_processed", {
+                "has_name": bool(user_name),
+                "has_session_customer": bool(session_customer_id)
+            })
             
         except Exception as e:
             self._log_kernel_operation(state, "greeting_error", {"error": str(e)})
@@ -1438,9 +1613,10 @@ TONE: Should be friendly, welcoming, and informative.
         return state
 
     def _handle_recommendation_node(self, state: ConversationState) -> ConversationState:
-        """Enhanced recommendation handling with product similarity support."""
+        """Enhanced recommendation handling with session customer ID priority."""
         try:
-            self._log_kernel_operation(state, "recommendation_start", {})
+            session_customer_id = state.get("context", {}).get("session_customer_id")
+            self._log_kernel_operation(state, "recommendation_start", {"session_customer_id": session_customer_id})
             
             extracted_info = state.get("extracted_info", {})
             extracted_params = extracted_info.get("extracted_parameters", {})
@@ -1448,12 +1624,12 @@ TONE: Should be friendly, welcoming, and informative.
             user_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
             original_query = user_messages[-1].content if user_messages else ""
             
-            # Get customer ID or similar product
-            user_id = extracted_params.get("customer_id")
+            # Priority order: session customer ID > extracted customer ID > context customer ID
+            user_id = session_customer_id or extracted_params.get("customer_id")
             similar_to_product = extracted_params.get("similar_to_product")
             recommendation_count = extracted_params.get("recommendation_count", 5)
             
-            # Fallback to context extraction for customer ID
+            # Fallback to context extraction only if no session or extracted customer ID
             if not user_id and not similar_to_product:
                 context = self._extract_context_from_messages(state)
                 user_id = context.get("last_customer_id")
@@ -1479,10 +1655,10 @@ TONE: Should be friendly, welcoming, and informative.
                     
                     self._log_kernel_operation(state, "customer_recommendations_generated", {
                         "customer_id": user_id,
+                        "is_session_customer": user_id == session_customer_id,
                         "count": len(recommendations)
                     })
                 else:
-                    # Customer not found
                     self._log_kernel_operation(state, "recommendation_customer_not_found", {"customer_id": user_id})
             
             # Store intermediate response for RAG
@@ -1490,20 +1666,22 @@ TONE: Should be friendly, welcoming, and informative.
                 intermediate_response = f"""
     RECOMMENDATION_CONTEXT: User requested {recommendation_type} recommendations.
     ORIGINAL_QUERY: {original_query}
+    SESSION_CUSTOMER_ID: {session_customer_id}
+    USED_CUSTOMER_ID: {user_id}
+    IS_SESSION_CUSTOMER: {user_id == session_customer_id if session_customer_id else False}
     EXTRACTED_PARAMETERS: {extracted_params}
     RECOMMENDATIONS_DATA: {json.dumps(recommendations, indent=2)}
     RECOMMENDATION_TYPE: {recommendation_type}
-    {"CUSTOMER_ID: " + str(user_id) if user_id else ""}
-    {"SIMILAR_TO_PRODUCT: " + similar_to_product if similar_to_product else ""}
     RESPONSE_NEEDED: Present the recommendations in a user-friendly format with explanations.
                 """
             else:
                 intermediate_response = f"""
     RECOMMENDATION_CONTEXT: User requested recommendations but none could be generated.
     ORIGINAL_QUERY: {original_query}
+    SESSION_CUSTOMER_ID: {session_customer_id}
     EXTRACTED_PARAMETERS: {extracted_params}
-    ERROR: No recommendations available - {"customer not found" if user_id else "no valid parameters"}
-    RESPONSE_NEEDED: Explain why no recommendations could be generated and ask for clarification.
+    ERROR: No recommendations available
+    RESPONSE_NEEDED: Explain why no recommendations could be generated. If logged in, provide personalized guidance.
                 """
             
             if "intermediate_responses" not in state:
@@ -1513,7 +1691,9 @@ TONE: Should be friendly, welcoming, and informative.
             # Set context for final generation
             state["final_context"] = {
                 "interaction_type": "recommendation",
+                "session_customer_id": session_customer_id,
                 "customer_id": user_id,
+                "is_session_customer": user_id == session_customer_id if session_customer_id else False,
                 "similar_to_product": similar_to_product,
                 "recommendations": recommendations,
                 "recommendation_type": recommendation_type,
@@ -1703,6 +1883,10 @@ TONE: Should be friendly, welcoming, and informative.
             intermediate_response = f"""
 GENERAL_QUESTION_CONTEXT: User asked a general question or requested help.
 ORIGINAL_QUERY: {original_query}
+**CRITICAL INSTRUCTIONS:**
+- Your knowledge is STRICTLY LIMITED to the following domains: product recommendations, customer analysis, purchase history, and general product information.
+- If the user's question is completely unrelated to these domains (e.g., about astronomy, history, sports scores, other companies, or general knowledge), you MUST politely decline to answer.
+- In such cases, do not attempt to answer. Instead, clearly state that you are a specialized assistant for this company and its products.
 RESPONSE_NEEDED: Provide helpful information about the assistant's capabilities or answer the general question.
 CAPABILITIES: Product recommendations, customer analysis, purchase history, product information.
             """
@@ -1780,6 +1964,8 @@ INSTRUCTIONS:
 6. Maintain a conversational and professional tone
 7. Include specific details from the context when relevant
 8. Format the response with appropriate emojis and structure
+9. Ensure the response is concise and to the point
+10. Don't answer questions outside of the provided context
 
 RESPONSE GUIDELINES:
 - For greetings: Be welcoming and introduce capabilities

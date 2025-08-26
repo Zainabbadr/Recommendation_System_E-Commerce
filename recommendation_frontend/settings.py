@@ -55,8 +55,8 @@ WSGI_APPLICATION = 'recommendation_frontend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': '/app/db/db.sqlite3', # docker
-        # 'NAME': "D:\\m\\Recommendation System Paysky\\Recommendation_System_E-Commerce\\db.sqlite3", # locally
+        # 'NAME': '/app/db/db.sqlite3', # docker
+        'NAME': "D:\\m\\Recommendation System Paysky\\Recommendation_System_E-Commerce\\db.sqlite3", # locally
     }
 }
 

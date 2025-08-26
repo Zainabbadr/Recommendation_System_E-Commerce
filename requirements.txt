@@ -51,3 +51,4 @@ langgraph-checkpoint-sqlite
 # crewai-tools>=0.43.0
 matplotlib
 seaborn
+langchain_community

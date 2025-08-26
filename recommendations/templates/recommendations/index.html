@@ -14,6 +14,59 @@
         min-height: 100vh;
     }
 
+
+    /* Purchase History Styles */
+    .purchase-summary-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: stretch;
+        gap: 20px;
+        margin-bottom: 20px;
+        flex-wrap: nowrap; /* ❌ disables wrapping -> all 4 stay in one row */
+    }
+
+    /* Make each card equal width */
+    .purchase-summary-card {
+        flex: 1;
+        border-radius: 12px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    /* Hover effect */
+    .purchase-summary-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+    }
+
+    .purchase-summary-card .card-body {
+        padding: 20px;
+    }
+
+    .table th { 
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef); border: none; font-weight: 600; color: #2c3e50; 
+    } 
+    
+    .table td { 
+        vertical-align: middle; border-color: #f1f3f4; 
+    } 
+    .badge-invoice {
+        background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-size: 0.75rem; padding: 4px 8px; 
+    } 
+    .price-positive { color: #28a745; font-weight: 600; } 
+    .stock-code-badge { background: #f8f9fa; color: #6c757d; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.8rem; 
+    }
+
+    /* Disabled tab styling */
+    .nav-tabs .nav-link:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        color: #6c757d !important;
+    }
+
+    .nav-tabs .nav-link:disabled:hover {
+        transform: none;
+    }
+
     /* Modern Navbar */
     .navbar {
         background: rgba(255, 255, 255, 0.95) !important;
@@ -651,7 +704,6 @@
     align-items: center;
 }
 </style>
-
 <div class="main-container">
 
     <!-- User Info Bar -->
@@ -687,29 +739,37 @@
     <!-- Tab Navigation -->
     <ul class="nav nav-tabs" id="recommendationTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %} active{% endif %}" 
+            <button class="nav-link{% if active_tab == 'chatbot' or not active_tab %} active{% endif %}" 
                     id="chatbot-tab" data-bs-toggle="tab" data-bs-target="#chatbot-recommendations" 
                     type="button" role="tab" aria-controls="chatbot-recommendations" 
-                    aria-selected="{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %}true{% else %}false{% endif %}">
+                    aria-selected="{% if active_tab == 'chatbot' or not active_tab %}true{% else %}false{% endif %}">
                 AI Chatbot
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link{% if request.GET.tab == 'ai-recommendations' %} active{% endif %}" 
+            <button class="nav-link{% if active_tab == 'ai-recommendations' %} active{% endif %}" 
                     id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-recommendations" 
                     type="button" role="tab" aria-controls="ai-recommendations" 
-                    aria-selected="{% if request.GET.tab == 'ai-recommendations' %}true{% else %}false{% endif %}">
+                    aria-selected="{% if active_tab == 'ai-recommendations' %}true{% else %}false{% endif %}">
                 AI Recommendations
             </button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link{% if active_tab == 'purchase-history' %} active{% endif %}" 
+                    id="purchase-history-tab" data-bs-toggle="tab" data-bs-target="#purchase-history" 
+                    type="button" role="tab" aria-controls="purchase-history" 
+                    aria-selected="{% if active_tab == 'purchase-history' %}true{% else %}false{% endif %}"
+                    {% if not customer_id %}disabled title="Login required to view purchase history"{% endif %}>
+                <i class="fas fa-history"></i> Purchase History
+            </button>
+        </li>
     </ul>
-
 
     <!-- Tab Content -->
     <div class="tab-content" id="recommendationTabContent">
         
         <!-- AI Chatbot Tab -->
-        <div class="tab-pane fade{% if not request.GET.tab or request.GET.tab != 'ai-recommendations' %} show active{% endif %}" 
+        <div class="tab-pane fade{% if active_tab == 'chatbot' or not active_tab %} show active{% endif %}" 
              id="chatbot-recommendations" role="tabpanel" aria-labelledby="chatbot-tab">
             <div class="row">
                 <!-- Chat History Sidebar -->
@@ -813,7 +873,7 @@
         </div>
 
         <!-- AI Recommendations Tab -->
-        <div class="tab-pane fade{% if request.GET.tab == 'ai-recommendations' %} show active{% endif %}" 
+        <div class="tab-pane fade{% if active_tab == 'ai-recommendations' %} show active{% endif %}" 
              id="ai-recommendations" role="tabpanel" aria-labelledby="ai-tab">
             <div class="row">
                 <div class="col-md-12">
@@ -939,8 +999,8 @@
                                                                 <span class="text-success fw-bold">
                                                                     ${{ rec.unit_price|floatformat:2 }}
                                                                 </span>
-                                                                <!-- {% if rec.source %}
-                                                                    <small class="text-muted">{{ rec.source }}</small> -->
+                                                                {% if rec.source %}
+                                                                    <small class="text-muted">{{ rec.source }}</small>
                                                                 {% endif %}
                                                             </div>
                                                         </div>
@@ -956,17 +1016,158 @@
                 </div>
             </div>
         </div>
+
+        <!-- Purchase History Tab -->
+        <div class="tab-pane fade{% if active_tab == 'purchase-history' %} show active{% endif %}" 
+             id="purchase-history" role="tabpanel" aria-labelledby="purchase-history-tab">
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5><i class="fas fa-shopping-cart"></i> My Purchase History</h5>
+                            <small class="text-muted">View all your past purchases with detailed information</small>
+                        </div>
+                        <div class="card-body">
+                            {% if not customer_id %}
+                                <div class="alert alert-warning text-center">
+                                    <i class="fas fa-sign-in-alt fa-2x mb-3"></i>
+                                    <h5>Login Required</h5>
+                                    <p>Please login to view your purchase history.</p>
+                                    <a href="{% url 'recommendations:login' %}" class="btn btn-primary">
+                                        <i class="fas fa-sign-in-alt"></i> Login Now
+                                    </a>
+                                </div>
+                            {% else %}
+                                <!-- Loading State -->
+                                <div id="purchase-loading" class="text-center py-4">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2 text-muted">Loading your purchase history...</p>
+                                </div>
+
+                                <!-- Purchase Summary -->
+                                <div id="purchase-summary" class="purchase-summary-container">
+                                    <div class="purchase-summary-card bg-primary text-white">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-shopping-cart fa-2x mb-2"></i>
+                                            <h4 id="total-purchases">0</h4>
+                                            <small>Total Purchases</small>
+                                        </div>
+                                    </div>
+                                    <div class="purchase-summary-card bg-success text-white">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-dollar-sign fa-2x mb-2"></i>
+                                            <h4 id="total-spent">$0</h4>
+                                            <small>Total Spent</small>
+                                        </div>
+                                    </div>
+                                    <div class="purchase-summary-card bg-info text-white">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-box fa-2x mb-2"></i>
+                                            <h4 id="unique-products">0</h4>
+                                            <small>Unique Products</small>
+                                        </div>
+                                    </div>
+                                    <div class="purchase-summary-card bg-warning text-white">
+                                        <div class="card-body text-center">
+                                            <i class="fas fa-receipt fa-2x mb-2"></i>
+                                            <h4 id="avg-order-value">$0</h4>
+                                            <small>Avg Order Value</small>
+                                        </div>
+                                    </div>
+                                </div>
+
+
+                                <!-- Search and Filter -->
+                                <div id="purchase-controls" class="row mb-3" style="display: none;">
+                                    <div class="col-md-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                            <input type="text" class="form-control" id="purchase-search" 
+                                                   placeholder="Search by product name or stock code...">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <select class="form-select" id="purchase-sort">
+                                            <option value="date-desc">Newest First</option>
+                                            <option value="date-asc">Oldest First</option>
+                                            <option value="price-desc">Highest Price</option>
+                                            <option value="price-asc">Lowest Price</option>
+                                            <option value="qty-desc">Highest Quantity</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <button class="btn btn-outline-secondary" onclick="exportPurchaseHistory()">
+                                            <i class="fas fa-download"></i> Export
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Purchase History Table -->
+                                <div id="purchase-table-container" style="display: none;">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Invoice</th>
+                                                    <th>Product</th>
+                                                    <th>Stock Code</th>
+                                                    <th>Quantity</th>
+                                                    <th>Unit Price</th>
+                                                    <th>Total</th>
+                                                    <th>Purchase Date</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="purchase-table-body">
+                                                <!-- Purchases will be loaded here -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    <!-- Pagination -->
+                                    <nav aria-label="Purchase history pagination">
+                                        <ul class="pagination justify-content-center" id="purchase-pagination">
+                                            <!-- Pagination buttons will be added here -->
+                                        </ul>
+                                    </nav>
+                                </div>
+
+                                <!-- Empty State -->
+                                <div id="purchase-empty" class="text-center py-5" style="display: none;">
+                                    <i class="fas fa-shopping-cart fa-3x text-muted mb-3"></i>
+                                    <h5 class="text-muted">No Purchase History Found</h5>
+                                    <p class="text-muted">You haven't made any purchases yet.</p>
+                                </div>
+
+                                <!-- Error State -->
+                                <div id="purchase-error" class="alert alert-danger" style="display: none;">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <strong>Error Loading Purchase History</strong>
+                                    <p id="purchase-error-message" class="mb-0">Unable to load your purchase history. Please try again.</p>
+                                    <button class="btn btn-outline-danger mt-2" onclick="loadPurchaseHistory()">
+                                        <i class="fas fa-retry"></i> Retry
+                                    </button>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
-
 <script>
-// Global variables for chat history
-// Replace the JavaScript section in your template with this:
-
 // Global variables for chat history
 let chatHistory = [];
 let currentChatId = null;
 let isWaitingForResponse = false;
+
+// Purchase History Variables
+let allPurchases = [];
+let filteredPurchases = [];
+let currentPage = 1;
+const itemsPerPage = 20;
 
 // Global function for external access
 window.fillExampleQuery = fillExampleQuery;
@@ -1021,18 +1222,68 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize the chat interface
     initChat();
+    
+    // Add purchase history tab event listener
+    const purchaseHistoryTab = document.getElementById('purchase-history-tab');
+    if (purchaseHistoryTab && !purchaseHistoryTab.disabled) {
+        purchaseHistoryTab.addEventListener('shown.bs.tab', function() {
+            loadPurchaseHistory();
+        });
+        
+        // Load immediately if this tab is active
+        if (purchaseHistoryTab.classList.contains('active')) {
+            loadPurchaseHistory();
+        }
+    }
+    
+    // Add search functionality for purchase history
+    const searchInput = document.getElementById('purchase-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            filterPurchases(this.value);
+        });
+    }
+    
+    // Add sort functionality for purchase history
+    const sortSelect = document.getElementById('purchase-sort');
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function() {
+            sortPurchases(this.value);
+        });
+    }
 });
+
+
+// Helper function to activate tabs
+function activateTab(tabId, contentId) {
+    // Deactivate all tabs
+    document.querySelectorAll('.nav-tabs .nav-link').forEach(tab => {
+        tab.classList.remove('active');
+        tab.setAttribute('aria-selected', 'false');
+    });
+    
+    // Deactivate all tab contents
+    document.querySelectorAll('.tab-content .tab-pane').forEach(pane => {
+        pane.classList.remove('show', 'active');
+    });
+    
+    // Activate target tab
+    const targetTab = document.getElementById(tabId);
+    const targetContent = document.getElementById(contentId);
+    
+    if (targetTab && targetContent) {
+        targetTab.classList.add('active');
+        targetTab.setAttribute('aria-selected', 'true');
+        targetContent.classList.add('show', 'active');
+    }
+}
+
+// =================== CHAT HISTORY FUNCTIONS ===================
 
 // Initialize chat history and load from session storage fallback
 function initializeChatHistory() {
-    // Use in-memory storage as fallback since localStorage is not supported
-    if (!window.chatHistoryStore) {
-        window.chatHistoryStore = [];
-    }
-    chatHistory = window.chatHistoryStore;
-    
-    updateChatHistoryDisplay();
-    updateChatCount();
+    // Load chat history from database
+    loadChatHistoryFromDB();
     
     // Sidebar toggle functionality
     const sidebarToggle = document.getElementById('sidebar-toggle-btn');
@@ -1053,10 +1304,10 @@ function initializeChatHistory() {
         });
     }
     
-    // Search functionality
-    const searchInput = document.getElementById('chat-search-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', function() {
+    // Search functionality for chat history
+    const chatSearchInput = document.getElementById('chat-search-input');
+    if (chatSearchInput) {
+        chatSearchInput.addEventListener('input', function() {
             filterChatHistory(this.value);
         });
     }
@@ -1064,6 +1315,124 @@ function initializeChatHistory() {
     // Start with a new chat if no current chat
     if (!currentChatId) {
         startNewChat();
+    }
+}
+
+function loadChatHistoryFromDB() {
+    // Get CSRF token
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (!csrfToken) {
+        console.error('CSRF token not found');
+        return;
+    }
+
+    fetch("{% url 'recommendations:get_chat_history' %}", {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': csrfToken.value,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            chatHistory = data.chats || [];
+            console.log('Loaded', chatHistory.length, 'chats from database');
+            updateChatHistoryDisplay();
+            updateChatCount();
+        } else {
+            console.error('Error loading chat history:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Failed to load chat history:', error);
+    });
+}
+
+function saveChatToDB(chatId, title, messages) {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (!csrfToken) {
+        console.error('CSRF token not found');
+        return;
+    }
+
+    fetch("{% url 'recommendations:save_chat_messages' %}", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken.value
+        },
+        body: JSON.stringify({
+            chat_id: chatId,
+            title: title,
+            messages: messages
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            console.log('Chat saved to database:', chatId);
+        } else {
+            console.error('Failed to save chat:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error saving chat:', error);
+    });
+}
+
+// Delete a chat
+function deleteChat(chatId) {
+    if (confirm('Are you sure you want to delete this chat? This will permanently remove all messages and context.')) {
+        console.log('Deleting chat:', chatId);
+        
+        // Delete from database
+        fetch("{% url 'recommendations:delete_chat' %}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                chat_id: chatId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Remove from memory
+                const chatIndex = chatHistory.findIndex(c => c.id === chatId);
+                if (chatIndex >= 0) {
+                    chatHistory.splice(chatIndex, 1);
+                }
+                
+                // If this was the current chat, start a new one
+                if (currentChatId === chatId) {
+                    startNewChat();
+                }
+                
+                updateChatHistoryDisplay();
+                updateChatCount();
+                console.log('Chat deleted successfully');
+            } else {
+                console.error('Failed to delete chat:', data.error);
+                alert('Failed to delete chat. Please try again.');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting chat:', error);
+            alert('Error deleting chat. Please try again.');
+        });
     }
 }
 
@@ -1190,42 +1559,39 @@ function saveMessagesToHistory(userMessage, botResponse) {
         { type: 'bot', content: botResponse, timestamp: timestamp }
     ];
     
-    // Find existing chat or create new one
+    // Find existing chat or create new one in memory
     let existingChatIndex = chatHistory.findIndex(c => c.id === currentChatId);
+    let chatTitle = userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : '');
+    let allMessages = [];
     
     if (existingChatIndex >= 0) {
         // Update existing chat
         chatHistory[existingChatIndex].messages.push(...messages);
         chatHistory[existingChatIndex].lastUpdated = timestamp;
         
-        // Update title if this is still a new chat (has default title or very few messages)
+        // Update title if this is still a new chat
         if (chatHistory[existingChatIndex].title.startsWith('New Chat') || 
             chatHistory[existingChatIndex].messages.length <= 4) {
-            chatHistory[existingChatIndex].title = userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : '');
+            chatHistory[existingChatIndex].title = chatTitle;
         }
         
-        console.log('Updated existing chat:', currentChatId, 'now has', chatHistory[existingChatIndex].messages.length, 'messages');
+        allMessages = chatHistory[existingChatIndex].messages;
+        chatTitle = chatHistory[existingChatIndex].title;
     } else {
         // Create new chat entry
         const newChat = {
             id: currentChatId,
-            title: userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : ''),
+            title: chatTitle,
             messages: messages,
             lastUpdated: timestamp,
             created: timestamp
         };
         chatHistory.unshift(newChat);
-        console.log('Created new chat entry:', currentChatId);
+        allMessages = messages;
     }
     
-    // Keep only last 50 chats
-    if (chatHistory.length > 50) {
-        const removed = chatHistory.splice(50);
-        console.log('Removed', removed.length, 'old chats');
-    }
-    
-    // Save to global store
-    window.chatHistoryStore = chatHistory;
+    // Save to database
+    saveChatToDB(currentChatId, chatTitle, allMessages);
     
     updateChatHistoryDisplay();
     updateChatCount();
@@ -1455,44 +1821,38 @@ function loadChat(chatId) {
     console.log('Chat loaded successfully. Current chat ID:', currentChatId);
 }
 
-// Delete a chat
-function deleteChat(chatId) {
-    if (confirm('Are you sure you want to delete this chat? This will permanently remove all messages and context.')) {
-        console.log('Deleting chat:', chatId);
-        
-        // Remove from history
-        const chatIndex = chatHistory.findIndex(c => c.id === chatId);
-        if (chatIndex >= 0) {
-            chatHistory.splice(chatIndex, 1);
-            window.chatHistoryStore = chatHistory;
-            console.log('Chat deleted from history');
-        }
-        
-        // If this was the current chat, start a new one
-        if (currentChatId === chatId) {
-            console.log('Deleted chat was active, starting new chat');
-            startNewChat();
-        }
-        
-        updateChatHistoryDisplay();
-        updateChatCount();
-    }
-}
-
 // Clear all chats
 function clearAllChats() {
     if (confirm('Are you sure you want to clear all chat history? This will permanently delete all conversations and their contexts.')) {
         console.log('Clearing all chats');
         
-        chatHistory = [];
-        window.chatHistoryStore = chatHistory;
+        // Delete all chats for current user
+        const deletePromises = chatHistory.map(chat => 
+            fetch("{% url 'recommendations:delete_chat' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({
+                    chat_id: chat.id
+                })
+            })
+        );
         
-        // Always start fresh
-        startNewChat();
-        updateChatHistoryDisplay();
-        updateChatCount();
-        
-        console.log('All chats cleared, new chat started');
+        Promise.all(deletePromises)
+        .then(responses => Promise.all(responses.map(r => r.json())))
+        .then(results => {
+            console.log('All chats cleared from database');
+            chatHistory = [];
+            startNewChat();
+            updateChatHistoryDisplay();
+            updateChatCount();
+        })
+        .catch(error => {
+            console.error('Error clearing chats:', error);
+            alert('Error clearing all chats. Please try again.');
+        });
     }
 }
 
@@ -1574,10 +1934,268 @@ function filterChatHistory(searchTerm) {
     });
 }
 
+// =================== PURCHASE HISTORY FUNCTIONS ===================
+
+// Load purchase history from API
+function loadPurchaseHistory() {
+    console.log('Loading purchase history...');
+    
+    // Show loading state
+    showElement('purchase-loading');
+    hideElement('purchase-summary');
+    hideElement('purchase-controls');
+    hideElement('purchase-table-container');
+    hideElement('purchase-empty');
+    hideElement('purchase-error');
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (!csrfToken) {
+        showPurchaseError('Security token not found. Please refresh the page.');
+        return;
+    }
+    
+    fetch("{% url 'recommendations:get_purchase_history' %}", {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': csrfToken.value,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        hideElement('purchase-loading');
+        
+        if (data.status === 'success') {
+            allPurchases = data.purchases;
+            filteredPurchases = [...allPurchases];
+            
+            if (allPurchases.length === 0) {
+                showElement('purchase-empty');
+            } else {
+                updatePurchaseSummary(data);
+                displayPurchases();
+                showElement('purchase-summary');
+                showElement('purchase-controls');
+                showElement('purchase-table-container');
+            }
+        } else {
+            showPurchaseError(data.error || data.message || 'Failed to load purchase history');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading purchase history:', error);
+        hideElement('purchase-loading');
+        showPurchaseError('Network error occurred while loading purchase history');
+    });
+}
+
+// Update purchase summary cards
+function updatePurchaseSummary(data) {
+    document.getElementById('total-purchases').textContent = data.total_count.toLocaleString();
+    document.getElementById('total-spent').textContent = `$${data.total_spent.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    document.getElementById('unique-products').textContent = data.unique_products.toLocaleString();
+    document.getElementById('avg-order-value').textContent = `$${data.avg_order_value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+}
+
+// Display purchases in table
+function displayPurchases() {
+    const tbody = document.getElementById('purchase-table-body');
+    if (!tbody) return;
+    
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedPurchases = filteredPurchases.slice(startIndex, endIndex);
+    
+    tbody.innerHTML = paginatedPurchases.map(purchase => `
+        <tr class="purchase-item">
+            <td>
+                <span class="badge-invoice">${purchase.invoice_no}</span>
+            </td>
+            <td>
+                <strong>${purchase.description}</strong>
+            </td>
+            <td>
+                <span class="stock-code-badge">${purchase.stock_code}</span>
+            </td>
+            <td>
+                <span class="fw-bold">${purchase.quantity}</span>
+            </td>
+            <td class="price-positive">
+                $${purchase.unit_price.toFixed(2)}
+            </td>
+            <td class="price-positive">
+                <strong>$${purchase.total_price.toFixed(2)}</strong>
+            </td>
+            <td>
+                <div>
+                    <strong>${purchase.purchase_datetime}</strong>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+    
+    updatePagination();
+}
+
+// Filter purchases based on search input
+function filterPurchases(searchTerm) {
+    const term = searchTerm.toLowerCase().trim();
+    
+    if (!term) {
+        filteredPurchases = [...allPurchases];
+    } else {
+        filteredPurchases = allPurchases.filter(purchase => 
+            purchase.description.toLowerCase().includes(term) ||
+            purchase.stock_code.toLowerCase().includes(term) ||
+            purchase.invoice_no.toLowerCase().includes(term)
+        );
+    }
+    
+    currentPage = 1;
+    displayPurchases();
+}
+
+// Sort purchases
+function sortPurchases(sortBy) {
+    switch (sortBy) {
+        case 'date-desc':
+            filteredPurchases.sort((a, b) => new Date(b.purchase_date + ' ' + b.purchase_time) - new Date(a.purchase_date + ' ' + a.purchase_time));
+            break;
+        case 'date-asc':
+            filteredPurchases.sort((a, b) => new Date(a.purchase_date + ' ' + a.purchase_time) - new Date(b.purchase_date + ' ' + b.purchase_time));
+            break;
+        case 'price-desc':
+            filteredPurchases.sort((a, b) => b.total_price - a.total_price);
+            break;
+        case 'price-asc':
+            filteredPurchases.sort((a, b) => a.total_price - b.total_price);
+            break;
+        case 'qty-desc':
+            filteredPurchases.sort((a, b) => b.quantity - a.quantity);
+            break;
+    }
+    
+    currentPage = 1;
+    displayPurchases();
+}
+
+// Update pagination
+function updatePagination() {
+    const totalPages = Math.ceil(filteredPurchases.length / itemsPerPage);
+    const pagination = document.getElementById('purchase-pagination');
+    
+    if (!pagination || totalPages <= 1) {
+        if (pagination) pagination.innerHTML = '';
+        return;
+    }
+    
+    let paginationHTML = '';
+    
+    // Previous button
+    paginationHTML += `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="changePage(${currentPage - 1})">Previous</a>
+        </li>
+    `;
+    
+    // Page numbers
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+            paginationHTML += `
+                <li class="page-item ${currentPage === i ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+                </li>
+            `;
+        } else if (i === currentPage - 3 || i === currentPage + 3) {
+            paginationHTML += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+    }
+    
+    // Next button
+    paginationHTML += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="changePage(${currentPage + 1})">Next</a>
+        </li>
+    `;
+    
+    pagination.innerHTML = paginationHTML;
+}
+
+// Change page
+function changePage(page) {
+    const totalPages = Math.ceil(filteredPurchases.length / itemsPerPage);
+    if (page < 1 || page > totalPages) return;
+    
+    currentPage = page;
+    displayPurchases();
+}
+
+// Export purchase history
+function exportPurchaseHistory() {
+    if (allPurchases.length === 0) {
+        alert('No purchase data to export');
+        return;
+    }
+    
+    // Create CSV content
+    const headers = ['Invoice', 'Stock Code', 'Product Description', 'Quantity', 'Unit Price', 'Total Price', 'Purchase Date', 'Purchase Time'];
+    const csvContent = [
+        headers.join(','),
+        ...allPurchases.map(purchase => [
+            purchase.invoice_no,
+            purchase.stock_code,
+            `"${purchase.description.replace(/"/g, '""')}"`, // Escape quotes
+            purchase.quantity,
+            purchase.unit_price,
+            purchase.total_price,
+            purchase.purchase_date,
+            purchase.purchase_time
+        ].join(','))
+    ].join('\n');
+    
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `purchase_history_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+}
+
+// Show purchase error
+function showPurchaseError(message) {
+    document.getElementById('purchase-error-message').textContent = message;
+    showElement('purchase-error');
+}
+
+// =================== UTILITY FUNCTIONS ===================
+
+// Utility functions for showing/hiding elements
+function showElement(id) {
+    const element = document.getElementById(id);
+    if (element) element.style.display = 'block';
+}
+
+function hideElement(id) {
+    const element = document.getElementById(id);
+    if (element) element.style.display = 'none';
+}
+
+// =================== GLOBAL FUNCTION EXPORTS ===================
+
 // Make functions available globally for onclick handlers
 window.startNewChat = startNewChat;
 window.loadChat = loadChat;
 window.deleteChat = deleteChat;
 window.clearAllChats = clearAllChats;
+window.changePage = changePage;
+window.exportPurchaseHistory = exportPurchaseHistory;
+window.loadPurchaseHistory = loadPurchaseHistory;
+window.fillExampleQuery = fillExampleQuery;
+
 </script>
 {% endblock %}

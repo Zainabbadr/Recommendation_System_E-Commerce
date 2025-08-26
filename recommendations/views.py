@@ -5,7 +5,7 @@ from django.shortcuts import render, redirect
 from django.http import JsonResponse
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
-
+from django.db import models
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from src.data.processor import DataProcessor
@@ -28,6 +28,186 @@ plt.switch_backend('Agg')
 _processor = None
 _df_clean = None
 _chatbot = None
+from recommendations.models import ChatHistory
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+
+@csrf_exempt
+def get_chat_history(request):
+    """API endpoint to get chat history"""
+    try:
+        customer_id = request.session.get('customer_id')
+        
+        # Get chats for this customer or general chats
+        if customer_id:
+            chats = ChatHistory.objects.filter(
+                models.Q(customer_id=customer_id) | models.Q(customer_id__isnull=True)
+            ).order_by('-last_updated')[:50]
+        else:
+            chats = ChatHistory.objects.filter(customer_id__isnull=True).order_by('-last_updated')[:50]
+        
+        chat_data = []
+        for chat in chats:
+            messages = chat.get_messages()
+            
+            chat_data.append({
+                'id': chat.chat_id,
+                'title': chat.title,
+                'messages': messages,
+                'lastUpdated': chat.last_updated.isoformat() if chat.last_updated else None,
+                'created': chat.created.isoformat() if chat.created else None,
+                'messageCount': len(messages)
+            })
+        
+        return JsonResponse({'chats': chat_data, 'status': 'success'})
+        
+    except Exception as e:
+        print(f"Error in get_chat_history: {e}")
+        return JsonResponse({'error': str(e), 'status': 'error'})
+
+@csrf_exempt
+def save_chat_messages(request):
+    """API endpoint to save chat messages"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        chat_id = data.get('chat_id')
+        title = data.get('title', 'New Chat')
+        messages = data.get('messages', [])
+        customer_id = request.session.get('customer_id')
+        
+        if not chat_id:
+            return JsonResponse({'error': 'chat_id required'}, status=400)
+        
+        # Update or create chat
+        chat, created = ChatHistory.objects.update_or_create(
+            chat_id=chat_id,
+            defaults={
+                'title': title,
+                'customer_id': customer_id,
+            }
+        )
+        
+        # Update messages
+        chat.set_messages(messages)
+        chat.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'created': created,
+            'chat_id': chat_id
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e), 'status': 'error'})
+
+@csrf_exempt
+def delete_chat(request):
+    """API endpoint to delete a chat"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        chat_id = data.get('chat_id')
+        
+        if not chat_id:
+            return JsonResponse({'error': 'chat_id required'}, status=400)
+        
+        deleted_count, _ = ChatHistory.objects.filter(chat_id=chat_id).delete()
+        
+        return JsonResponse({
+            'status': 'success',
+            'deleted': deleted_count > 0,
+            'chat_id': chat_id
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e), 'status': 'error'})
+    
+@csrf_exempt
+def get_purchase_history(request):
+    """API endpoint to get customer purchase history"""
+    try:
+        customer_id = request.session.get('customer_id')
+        
+        if not customer_id:
+            return JsonResponse({
+                'error': 'Customer ID not found in session',
+                'status': 'error'
+            }, status=400)
+        
+        # Get processor and data
+        processor, df_clean = get_processor_and_data()
+        
+        if df_clean is None:
+            return JsonResponse({
+                'error': 'Failed to load transaction data',
+                'status': 'error'
+            }, status=500)
+        
+        # Filter data for the specific customer
+        customer_purchases = df_clean[df_clean['CustomerID'] == customer_id].copy()
+        
+        if customer_purchases.empty:
+            return JsonResponse({
+                'purchases': [],
+                'total_count': 0,
+                'total_spent': 0,
+                'status': 'success',
+                'message': f'No purchase history found for Customer ID {customer_id}'
+            })
+        
+        # Calculate total price if not exists
+        if 'TotalPrice' not in customer_purchases.columns:
+            customer_purchases['TotalPrice'] = customer_purchases['Quantity'] * customer_purchases['UnitPrice']
+        
+        # Sort by date (most recent first)
+        customer_purchases['InvoiceDate'] = pd.to_datetime(customer_purchases['InvoiceDate'])
+        customer_purchases = customer_purchases.sort_values('InvoiceDate', ascending=False)
+        
+        # Prepare purchase data
+        purchases = []
+        for _, row in customer_purchases.iterrows():
+            purchases.append({
+                'invoice_no': row['InvoiceNo'],
+                'stock_code': row['StockCode'],
+                'description': row['Description'] if pd.notna(row['Description']) else 'No Description',
+                'quantity': int(row['Quantity']),
+                'unit_price': float(row['UnitPrice']),
+                'total_price': float(row['TotalPrice']),
+                'purchase_date': row['InvoiceDate'].strftime('%Y-%m-%d'),
+                'purchase_time': row['InvoiceDate'].strftime('%H:%M:%S'),
+                'purchase_datetime': row['InvoiceDate'].strftime('%b %d, %Y at %I:%M %p'),
+                'country': row.get('Country', 'Unknown')
+            })
+        
+        # Calculate summary statistics
+        total_spent = float(customer_purchases['TotalPrice'].sum())
+        unique_products = customer_purchases['StockCode'].nunique()
+        total_orders = customer_purchases['InvoiceNo'].nunique()
+        avg_order_value = total_spent / total_orders if total_orders > 0 else 0
+        
+        return JsonResponse({
+            'purchases': purchases,
+            'total_count': len(purchases),
+            'total_spent': total_spent,
+            'unique_products': unique_products,
+            'total_orders': total_orders,
+            'avg_order_value': avg_order_value,
+            'status': 'success'
+        })
+        
+    except Exception as e:
+        print(f"Error in get_purchase_history: {e}")
+        return JsonResponse({
+            'error': str(e),
+            'status': 'error'
+        }, status=500)
+    
 
 def get_processor_and_data():
     """Initialize processor and load data if not already done."""
@@ -176,7 +356,7 @@ def get_simple_recommendations(df, target_user_id, stock_codes, top_n=7):
 @csrf_exempt
 @require_http_methods(["POST"])
 def chatbot_view(request):
-    """Handle chatbot API requests."""
+    """Handle chatbot API requests with chat history integration."""
     try:
         data = json.loads(request.body)
         message = data.get('message', '')
@@ -190,6 +370,11 @@ def chatbot_view(request):
                 'status': 'error'
             }, status=400)
         
+        # Generate chat_id if not provided
+        if not chat_id:
+            import time
+            chat_id = f"chat_{int(time.time())}"
+        
         # Get chatbot instance
         chatbot = get_chatbot()
         
@@ -199,28 +384,26 @@ def chatbot_view(request):
                 'status': 'fallback'
             })
         
-        # Get chatbot response
+        # Get chatbot response (now with Django integration)
         response = chatbot.chat(message, chat_id=chat_id, user_id=user_id, session_customer_id=session_customer_id)
         
         return JsonResponse({
             'response': response,
             'status': 'success',
             'chat_id': chat_id,
-            'message_count': len(chatbot.get_chat_context(chat_id or 'default').get('messages', []))
+            'user_id': user_id
         })
         
     except json.JSONDecodeError:
         return JsonResponse({
             'error': 'Invalid JSON data',
-            'status': 'error',
-            'chat_id': chat_id
+            'status': 'error'
         }, status=400)
     except Exception as e:
-        print(f"❌ Chatbot error: {e}")
+        print(f"Chatbot error: {e}")
         return JsonResponse({
             'response': 'I encountered an unexpected error. Please try again or use the AI Recommendations tab.',
-            'status': 'error',
-            'chat_id': data.get('chat_id') if 'data' in locals() else None
+            'status': 'error'
         })
 
 def health_check(request):
@@ -285,6 +468,15 @@ def index(request):
     
     # Get products for dropdown (always needed for GET and POST)
     available_products = get_products_for_dropdown()
+
+    # Handle purchase history tab request
+    if request.method == 'GET' and request.GET.get('tab') == 'purchase-history':
+        if not customer_id:
+            return render(request, 'recommendations/index.html', {
+                'error': 'Please login to view your purchase history',
+                'available_products': available_products,
+                'active_tab': 'purchase-history'
+            })
     
     if request.method == 'POST':
         # Get form data
@@ -483,7 +675,8 @@ def index(request):
     # GET request - show empty form with product dropdown
     return render(request, 'recommendations/index.html', {
         'available_products': available_products,
-        'customer_id': customer_id # Pass customer_id to index.html for dashboard link
+        'customer_id': customer_id, # Pass customer_id to index.html for dashboard link
+        'active_tab': request.GET.get('tab', 'chatbot')  
     })
 
 
@@ -745,3 +938,4 @@ def customer_dashboard_view(request):
         'dashboard_image': plot_data.get('dashboard_image'),
         'error': plot_data.get('error')
     })
+
