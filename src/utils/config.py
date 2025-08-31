@@ -12,7 +12,7 @@ class APIConfig:
     """API configuration settings."""
 
     groq_api_key: Optional[str] = None
-    google_api_key: str = "AIzaSyAlBLzP3vr560ZqiLyq6wU7pTBcYU74AyY"
+    google_api_key: str = ""
 
     def __post_init__(self):
         # Try to get API keys from environment variables
